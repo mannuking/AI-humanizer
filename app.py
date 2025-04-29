@@ -4,6 +4,7 @@ import time
 import os
 from dotenv import load_dotenv
 import re
+import random
 
 # --- Configuration ---
 load_dotenv()  # Load variables from .env file
@@ -38,59 +39,375 @@ def count_words(text):
         return 0
     return len(re.findall(r'\b\w+\b', text))
 
+def synonym_swap(text):
+    """Randomly swap synonyms for common words to increase human-likeness."""
+    synonyms = {
+        'important': ['crucial', 'vital', 'significant'],
+        'result': ['outcome', 'finding', 'consequence'],
+        'method': ['approach', 'technique', 'procedure'],
+        'show': ['demonstrate', 'reveal', 'indicate'],
+        'use': ['utilize', 'employ', 'apply'],
+        'increase': ['raise', 'enhance', 'amplify'],
+        'decrease': ['reduce', 'diminish', 'lower'],
+        'data': ['information', 'dataset', 'figures'],
+        'analysis': ['examination', 'assessment', 'evaluation'],
+        'study': ['investigation', 'research', 'examination'],
+        'model': ['framework', 'paradigm', 'structure'],
+        'significant': ['notable', 'remarkable', 'substantial'],
+        'conclusion': ['inference', 'determination', 'resolution'],
+        'demonstrate': ['show', 'illustrate', 'exhibit'],
+        'obtain': ['acquire', 'procure', 'derive'],
+        'support': ['corroborate', 'substantiate', 'back'],
+        'suggest': ['imply', 'indicate', 'hint'],
+        'however': ['nevertheless', 'nonetheless', 'yet'],
+        'therefore': ['thus', 'consequently', 'accordingly'],
+        'because': ['since', 'as', 'due to the fact that'],
+        'although': ['though', 'even though', 'albeit'],
+        'can': ['may', 'could', 'might'],
+        'will': ['shall', 'is expected to', 'is likely to'],
+        'also': ['additionally', 'furthermore', 'moreover'],
+        'but': ['however', 'yet', 'nevertheless'],
+        'very': ['extremely', 'highly', 'particularly'],
+        'different': ['distinct', 'varied', 'diverse'],
+        'similar': ['comparable', 'analogous', 'alike'],
+        'large': ['substantial', 'considerable', 'sizeable'],
+        'small': ['modest', 'minor', 'limited'],
+        'new': ['novel', 'recent', 'fresh'],
+        'old': ['previous', 'former', 'prior'],
+        'main': ['primary', 'principal', 'chief'],
+        'common': ['prevalent', 'widespread', 'frequent'],
+        'rare': ['infrequent', 'uncommon', 'seldom'],
+    }
+    words = text.split()
+    for i, word in enumerate(words):
+        key = word.lower().strip('.,;:')
+        if key in synonyms and random.random() < 0.18:
+            replacement = random.choice(synonyms[key])
+            # Preserve capitalization
+            if word[0].isupper():
+                replacement = replacement.capitalize()
+            # Preserve punctuation
+            if word[-1] in ',.;:':
+                replacement += word[-1]
+            words[i] = replacement
+    return ' '.join(words)
+
+def introduce_quirks(text):
+    """Introduce minor grammatical quirks and random punctuation for human-likeness."""
+    sentences = re.split(r'(?<=[.!?]) +', text)
+    for i in range(len(sentences)):
+        # Randomly add a comma splice
+        if random.random() < 0.10 and len(sentences[i].split()) > 8:
+            words = sentences[i].split()
+            pos = random.randint(3, len(words)-3)
+            words.insert(pos, ',')
+            sentences[i] = ' '.join(words)
+        # Randomly drop a word (simulate a human typo)
+        if random.random() < 0.05 and len(sentences[i].split()) > 10:
+            words = sentences[i].split()
+            drop = random.randint(1, len(words)-2)
+            del words[drop]
+            sentences[i] = ' '.join(words)
+        # Randomly add a British/American spelling variant
+        if random.random() < 0.08:
+            sentences[i] = sentences[i].replace('analyze', 'analyse')
+            sentences[i] = sentences[i].replace('color', 'colour')
+            sentences[i] = sentences[i].replace('behavior', 'behaviour')
+            sentences[i] = sentences[i].replace('modeling', 'modelling')
+    return ' '.join(sentences)
+
+def postprocess_humanization(text):
+    """Apply synonym swapping and quirks to further humanize the text."""
+    text = synonym_swap(text)
+    text = introduce_quirks(text)
+    return text
+
+def advanced_humanize(text):
+    """
+    Advanced post-processing: chunked rewriting, sentence shuffling, aggressive synonym/structure variation.
+    """
+    import nltk
+    nltk.download('punkt', quiet=True)
+    from nltk.tokenize import sent_tokenize
+    import random
+    
+    # Aggressive synonym replacement
+    synonyms = {
+        'important': ['crucial', 'vital', 'pivotal', 'essential'],
+        'result': ['outcome', 'finding', 'consequence', 'implication'],
+        'method': ['approach', 'technique', 'procedure', 'strategy'],
+        'show': ['demonstrate', 'reveal', 'indicate', 'exhibit'],
+        'use': ['utilize', 'employ', 'apply', 'deploy'],
+        'increase': ['raise', 'enhance', 'amplify', 'escalate'],
+        'decrease': ['reduce', 'diminish', 'lower', 'curtail'],
+        'data': ['information', 'dataset', 'figures', 'statistics'],
+        'analysis': ['examination', 'assessment', 'evaluation', 'scrutiny'],
+        'study': ['investigation', 'research', 'examination', 'survey'],
+        'model': ['framework', 'paradigm', 'structure', 'schema'],
+        'significant': ['notable', 'remarkable', 'substantial', 'meaningful'],
+        'conclusion': ['inference', 'determination', 'resolution', 'judgment'],
+        'demonstrate': ['show', 'illustrate', 'exhibit', 'display'],
+        'obtain': ['acquire', 'procure', 'derive', 'attain'],
+        'support': ['corroborate', 'substantiate', 'back', 'reinforce'],
+        'suggest': ['imply', 'indicate', 'hint', 'propose'],
+        'however': ['nevertheless', 'nonetheless', 'yet', 'still'],
+        'therefore': ['thus', 'consequently', 'accordingly', 'hence'],
+        'because': ['since', 'as', 'due to the fact that', 'inasmuch as'],
+        'although': ['though', 'even though', 'albeit', 'notwithstanding'],
+        'can': ['may', 'could', 'might', 'is able to'],
+        'will': ['shall', 'is expected to', 'is likely to', 'is set to'],
+        'also': ['additionally', 'furthermore', 'moreover', 'as well'],
+        'but': ['however', 'yet', 'nevertheless', 'on the other hand'],
+        'very': ['extremely', 'highly', 'particularly', 'exceptionally'],
+        'different': ['distinct', 'varied', 'diverse', 'dissimilar'],
+        'similar': ['comparable', 'analogous', 'alike', 'resembling'],
+        'large': ['substantial', 'considerable', 'sizeable', 'immense'],
+        'small': ['modest', 'minor', 'limited', 'minute'],
+        'new': ['novel', 'recent', 'fresh', 'innovative'],
+        'old': ['previous', 'former', 'prior', 'ancient'],
+        'main': ['primary', 'principal', 'chief', 'foremost'],
+        'common': ['prevalent', 'widespread', 'frequent', 'ubiquitous'],
+        'rare': ['infrequent', 'uncommon', 'seldom', 'scarce'],
+    }
+    
+    # Tokenize into sentences
+    sentences = sent_tokenize(text)
+    # Shuffle sentences to break global coherence
+    random.shuffle(sentences)
+    # Aggressively rewrite each sentence
+    rewritten = []
+    for s in sentences:
+        words = s.split()
+        for i, word in enumerate(words):
+            key = word.lower().strip('.,;:')
+            if key in synonyms and random.random() < 0.25:
+                replacement = random.choice(synonyms[key])
+                if word[0].isupper():
+                    replacement = replacement.capitalize()
+                if word[-1] in ',.;:':
+                    replacement += word[-1]
+                words[i] = replacement
+        # Randomly switch active/passive voice (simple heuristic)
+        if random.random() < 0.15 and ' by ' not in s and len(words) > 6:
+            words = words[::-1]
+        # Randomly merge with previous sentence
+        if rewritten and random.random() < 0.18:
+            rewritten[-1] += ' ' + ' '.join(words)
+        else:
+            rewritten.append(' '.join(words))
+    # Optionally, insert a parenthetical or editor's note
+    if len(rewritten) > 2 and random.random() < 0.5:
+        idx = random.randint(1, len(rewritten)-2)
+        rewritten[idx] += ' (editor’s note: see also related literature for further context.)'
+    return ' '.join(rewritten)
+
+def ultra_humanize(text):
+    """
+    Further humanize text by simulating typos, inline corrections, parenthetical asides, filler phrases, and sentence structure disruption.
+    """
+    import random
+    import re
+    # Filler and self-reference phrases
+    fillers = [
+        'it is worth noting that', 'interestingly', 'in other words', 'as previously mentioned',
+        'from my perspective', 'to be clear', 'in my experience', 'as discussed earlier',
+        'notably', 'indeed', 'in fact', 'to reiterate', 'as an aside', 'on a related note'
+    ]
+    # Parenthetical asides
+    asides = [
+        '(see discussion above)', '(typo corrected)', '(revised for clarity)',
+        '(editor’s note)', '(as I recall)', '(personal observation)', '(cf. related work)'
+    ]
+    # Simulate typos and inline corrections
+    def typo_correction(word):
+        if len(word) > 6 and random.random() < 0.08:
+            idx = random.randint(1, len(word)-2)
+            typo = word[:idx] + random.choice('abcdefghijklmnopqrstuvwxyz') + word[idx+1:]
+            return f"{typo}—sorry, {word}"
+        return word
+    # Split into sentences
+    sentences = re.split(r'(?<=[.!?]) +', text)
+    new_sentences = []
+    for s in sentences:
+        # Randomly insert a filler phrase at the start
+        if random.random() < 0.18:
+            s = f"{random.choice(fillers).capitalize()}, {s[0].lower() + s[1:]}"
+        # Randomly insert a parenthetical aside
+        if random.random() < 0.12:
+            words = s.split()
+            if len(words) > 6:
+                pos = random.randint(2, len(words)-2)
+                words.insert(pos, random.choice(asides))
+                s = ' '.join(words)
+        # Randomly simulate a typo and inline correction
+        if random.random() < 0.10:
+            words = s.split()
+            idx = random.randint(0, len(words)-1)
+            words[idx] = typo_correction(words[idx])
+            s = ' '.join(words)
+        # Randomly start with a conjunction
+        if random.random() < 0.10:
+            s = random.choice(['And', 'But', 'So', 'Yet']) + ', ' + s[0].lower() + s[1:]
+        # Randomly merge with previous sentence
+        if new_sentences and random.random() < 0.15:
+            new_sentences[-1] += ' ' + s
+        else:
+            new_sentences.append(s)
+    return ' '.join(new_sentences)
+
+def split_preserve_structure(text):
+    """
+    Split text into chunks (paragraphs, numbered/bulleted points) while preserving structure.
+    Returns a list of (prefix, chunk) where prefix is the bullet/number or empty string.
+    """
+    import re
+    lines = text.splitlines()
+    chunks = []
+    buffer = []
+    prefix = ''
+    for line in lines:
+        m = re.match(r'^(\s*([\d]+[.)]|[-*•])\s+)(.*)', line)
+        if m:
+            # Save previous buffer
+            if buffer:
+                chunks.append((prefix, '\n'.join(buffer).strip()))
+                buffer = []
+            prefix = m.group(1)
+            buffer.append(m.group(3))
+        elif line.strip() == '':
+            if buffer:
+                chunks.append((prefix, '\n'.join(buffer).strip()))
+                buffer = []
+                prefix = ''
+        else:
+            buffer.append(line)
+    if buffer:
+        chunks.append((prefix, '\n'.join(buffer).strip()))
+    return chunks
+
+def join_preserved_structure(chunks):
+    """
+    Reassemble chunks into text, preserving original prefixes and paragraph breaks.
+    """
+    out = []
+    for prefix, chunk in chunks:
+        if prefix:
+            out.append(f"{prefix}{chunk}")
+        else:
+            out.append(chunk)
+    return '\n\n'.join(out)
+
+def split_topics_explanations(text):
+    """
+    Split text into (topic, explanation) pairs based on lines ending with a colon or bold/numbered points.
+    Returns a list of (topic, explanation) tuples.
+    """
+    import re
+    lines = text.splitlines()
+    pairs = []
+    topic = None
+    explanation = []
+    for line in lines:
+        # Detect topic heading (ends with colon, or is bold, or is a numbered/bulleted point)
+        if re.match(r'^\s*([\d]+[.)]|[-*•])?\s*([A-Z][^:]{2,}):\s*$', line):
+            # Save previous
+            if topic is not None:
+                pairs.append((topic, ' '.join(explanation).strip()))
+                explanation = []
+            topic = line.strip()
+        elif re.match(r'^\s*([A-Z][^:]{2,}):\s*', line):
+            # Inline topic: explanation
+            m = re.match(r'^(\s*[A-Z][^:]{2,}:)(.*)$', line)
+            if topic is not None:
+                pairs.append((topic, ' '.join(explanation).strip()))
+                explanation = []
+            topic = m.group(1).strip()
+            if m.group(2).strip():
+                explanation.append(m.group(2).strip())
+        else:
+            explanation.append(line.strip())
+    if topic is not None:
+        pairs.append((topic, ' '.join(explanation).strip()))
+    # Remove empty explanations
+    pairs = [(t, e) for t, e in pairs if t and e]
+    return pairs
+
+def join_topics_explanations(pairs):
+    """
+    Reassemble topic–explanation pairs into text, preserving headings and explanations.
+    """
+    out = []
+    for topic, explanation in pairs:
+        out.append(f"{topic}\n{explanation}")
+    return '\n\n'.join(out)
+
 # --- Core Function ---
 def humanize_text_academic(text, target_word_count):
     """
-    Rewrites AI-generated academic text to sound more human-like,
-    maintaining meaning and tone, using Gemini 2.5 Pro.
+    Rewrites AI-generated academic text to sound more human-like while maintaining
+    scientific rigor and formal academic tone, using Gemini 2.5 Pro.
 
     Args:
       text: The input AI-generated academic text.
       target_word_count: The exact number of words the output should have.
 
     Returns:
-      Humanized text or an error message.
+      Humanized academic text or an error message.
     """
     prompt = f"""
-You are an expert academic writer and editor specializing in crafting text that is completely undetectable by AI detection systems. Your goal is to rewrite the provided text while strictly adhering to these guidelines:
+You are a distinguished professor and scientific writer with decades of experience publishing in prestigious journals. Your task is to rewrite the provided text to be completely undetectable by AI detection systems while maintaining the highest standards of academic writing. Follow these guidelines exactly:
 
-**Core Task:** Rewrite and paraphrase the following text to sound entirely human-written, maintaining its original meaning and core arguments while being completely undetectable by AI detection tools.
+**Core Task:** Transform the following text to sound completely human-written while preserving its scholarly tone, formal academic language, technical precision, and core arguments.
 
 **EXTREMELY IMPORTANT - WORD COUNT CONSTRAINT:**
 - The rewritten text MUST contain EXACTLY {target_word_count} words - no more, no less.
 - Count words as separate units divided by spaces (contractions count as one word).
-- This is critical for my use case and is non-negotiable.
+- This word count requirement is critical and non-negotiable.
 
-**Human-Like Writing Characteristics (Essential for Bypassing AI Detection):**
-- Use inconsistent patterns and occasional imperfections typical of human writing
-- Incorporate idiomatic expressions and colloquialisms where appropriate
-- Include occasional filler words, qualifying phrases, or hedge words when natural
-- Vary punctuation usage with occasional comma splices or dashes
-- Use contractions inconsistently (sometimes use them, sometimes don't)
-- Occasionally use sentence fragments or slightly run-on sentences
+**Advanced Anti-Detection Techniques (ESSENTIAL):**
+- Introduce subtle grammatical quirks and occasional inconsistencies (humans aren't perfect)
+- Add rare punctuation patterns that AI models rarely generate (e.g., semicolons followed by em dashes; unusual comma placements)
+- Insert uncommon transitional phrases and scholarly expressions rarely found in AI databases
+- Vary sentence complexity unpredictably - mix extremely complex sentences with occasional short, direct ones
+- Include idiosyncratic word choices that wouldn't follow typical AI training patterns
+- Break patterns periodically - AI tends to maintain consistent styles throughout a text
+- Introduce subtle typographical inconsistencies (like occasional use of British vs. American spellings)
+- Use discipline-specific jargon with slight variations that only a human expert would know
+- Include an occasional tangential argument or minor contradiction (humans don't write with perfect logical flow)
 
-**Advanced Techniques for Bypassing AI Detection:**
-- Inject subtle randomness and natural irregularities in sentence structures
-- Use distinctly human metaphors and analogies not commonly found in AI writing
-- Incorporate personal-seeming intuitions or reflections where appropriate
-- Employ varied stylistic elements that AI systems typically avoid or use predictably
-- Deliberately avoid repetitive sentence beginnings, perfect syntactic parallels, and other AI giveaways
+**Academic Writing Characteristics:**
+- Use complex lexicon and discipline-appropriate terminology
+- Incorporate scholarly hedging where appropriate (e.g., "suggests that," "appears to indicate")
+- Apply specialized academic phrases and disciplinary conventions
+- Employ methodical logical progression with minor natural diversions
+- Include occasional self-references or references to previous work (e.g., "our findings suggest," "as I have previously argued")
+- Keep a formal academic register but with subtle variations in tone
 
-**Content Integrity:**
-- Maintain the original meaning, key arguments, and technical accuracy
-- Ensure technical terms are used correctly and consistently
-- Preserve all factual content and logical flow
+**Human-Like Writing Elements:**
+- Include irregular paragraph structures that don't follow algorithmic patterns
+- Add the occasional personal viewpoint hidden in seemingly objective statements
+- Insert minor stylistic quirks that would be specific to a human author
+- Use uncommon synonyms for common academic terms
+- Include research-specific analogies or metaphors that AI wouldn't typically generate
+- Vary citation and reference patterns in ways AI wouldn't predict
+
+**Scientific Integrity Requirements:**
+- Maintain meticulous accuracy of all technical terms, data, and research concepts
+- Preserve the logical structure and argumentative framework of the original
+- Retain all evidence-based reasoning and methodological details
+- Ensure all scientific claims remain properly qualified and contextualized
 
 **Output Requirements:**
 - Provide ONLY the rewritten text with EXACTLY {target_word_count} words
 - Do not include any explanations, introductions, or comments in your response
+- The final text should read as though written by a human academic expert in the field with their own distinctive writing style
 
 **Input Text:**
 ---
 {text}
 ---
 
-**Rewritten Human Text (EXACTLY {target_word_count} words):**
+**Rewritten Human Academic Text (EXACTLY {target_word_count} words):**
 """
 
     try:
@@ -103,7 +420,9 @@ You are an expert academic writer and editor specializing in crafting text that 
                 {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
             ],
             generation_config=genai.types.GenerationConfig(
-                temperature=0.9  # Higher temperature for more creative variations
+                temperature=0.95,  # Higher temperature for more randomness and unpredictability
+                top_p=0.85,        # Slightly lower top_p for more diversity in word choice
+                top_k=60           # Wider selection of tokens for increased randomness
             )
         )
         # Handle potential blocking or lack of response text
@@ -156,44 +475,85 @@ if st.button("🚀 Humanize Text"):
     if input_text:
         cleaned_input = input_text.strip() # Remove leading/trailing whitespace
         if cleaned_input:
-            # Get the word count of the input text
-            input_word_count = count_words(cleaned_input)
-            
-            with st.spinner("🧠 Processing... Creating undetectable human-like text..."):
-                start_time = time.time()
-                humanized_output = humanize_text_academic(cleaned_input, input_word_count)
-                end_time = time.time()
-
-            processing_time = end_time - start_time
-            st.info(f"Processing completed in {processing_time:.2f} seconds.")
-
-            # Display output in the placeholder
-            output_text_area.text_area("Output:", value=humanized_output, height=350, key="output_filled")
-            
-            # Update output word count
-            output_word_count.markdown(f"**Word count: {count_words(humanized_output)}**")
-
-            # Check if the output indicates an error before showing success
-            if "Error:" not in humanized_output:
-                st.success("✅ Text humanization complete!")
-                
-                # AI Detection Check section
-                st.subheader("🔍 Verify AI Detection")
-                st.markdown("""
-                To ensure your text passes AI detection, check it with these free detection tools:
-                - [ZeroGPT](https://www.zerogpt.com/)
-                - [GPTZero](https://gptzero.me/)
-                - [Writer AI Content Detector](https://writer.com/ai-content-detector/)
-                - [Content at Scale](https://contentatscale.ai/ai-content-detector/)
-                
-                Recommended workflow:
-                1. Copy the humanized text above
-                2. Paste it into 2-3 different detectors
-                3. If any detector flags it as AI, try running it through the humanizer again
-                """)
+            # Try to split as topic–explanation pairs
+            topic_pairs = split_topics_explanations(cleaned_input)
+            if len(topic_pairs) >= 2:
+                # Humanize each topic–explanation pair
+                total_word_count = count_words(cleaned_input)
+                pair_word_counts = [count_words(t + ' ' + e) for t, e in topic_pairs]
+                total_pairs_words = sum(pair_word_counts)
+                scale = total_word_count / total_pairs_words if total_pairs_words else 1
+                pair_word_counts = [max(1, round(w * scale)) for w in pair_word_counts]
+                diff = total_word_count - sum(pair_word_counts)
+                for i in range(abs(diff)):
+                    idx = i % len(pair_word_counts)
+                    if diff > 0:
+                        pair_word_counts[idx] += 1
+                    elif diff < 0 and pair_word_counts[idx] > 1:
+                        pair_word_counts[idx] -= 1
+                humanized_pairs = []
+                with st.spinner("🧠 Processing... Creating undetectable human-like text..."):
+                    start_time = time.time()
+                    for (topic, expl), wc in zip(topic_pairs, pair_word_counts):
+                        # Humanize explanation only, keep topic as is
+                        out = humanize_text_academic(expl, wc - count_words(topic)) if wc > count_words(topic) else expl
+                        if "Error:" not in out:
+                            out = advanced_humanize(out)
+                            out = ultra_humanize(out)
+                        humanized_pairs.append((topic, out))
+                    humanized_output = join_topics_explanations(humanized_pairs)
+                    end_time = time.time()
+                processing_time = end_time - start_time
+                st.info(f"Processing completed in {processing_time:.2f} seconds.")
+                output_text_area.text_area("Output:", value=humanized_output, height=350, key="output_filled")
+                output_word_count.markdown(f"**Word count: {count_words(humanized_output)}**")
+                if "Error:" not in humanized_output:
+                    st.success("✅ Text humanization complete!")
+                else:
+                    st.error("Processing encountered an issue. See message above.")
             else:
-                 st.error("Processing encountered an issue. See message above.")
-
+                # Fallback to previous structure-preserving chunking
+                # ...existing code for structured_chunks...
+                structured_chunks = split_preserve_structure(cleaned_input)
+                humanized_chunks = []
+                total_word_count = count_words(cleaned_input)
+                chunk_word_counts = []
+                for _, chunk in structured_chunks:
+                    chunk_word_counts.append(count_words(chunk))
+                total_chunks_words = sum(chunk_word_counts)
+                if total_chunks_words == 0:
+                    st.warning("Input text is empty or contains only whitespace.")
+                    st.stop()
+                scale = total_word_count / total_chunks_words
+                chunk_word_counts = [max(1, round(w * scale)) for w in chunk_word_counts]
+                diff = total_word_count - sum(chunk_word_counts)
+                for i in range(abs(diff)):
+                    idx = i % len(chunk_word_counts)
+                    if diff > 0:
+                        chunk_word_counts[idx] += 1
+                    elif diff < 0 and chunk_word_counts[idx] > 1:
+                        chunk_word_counts[idx] -= 1
+                with st.spinner("🧠 Processing... Creating undetectable human-like text..."):
+                    start_time = time.time()
+                    for (prefix, chunk), chunk_wc in zip(structured_chunks, chunk_word_counts):
+                        if chunk.strip():
+                            out = humanize_text_academic(chunk, chunk_wc)
+                            if "Error:" not in out:
+                                out = advanced_humanize(out)
+                                out = ultra_humanize(out)
+                            humanized_chunks.append((prefix, out))
+                        else:
+                            humanized_chunks.append((prefix, chunk))
+                    humanized_output = join_preserved_structure(humanized_chunks)
+                    end_time = time.time()
+                processing_time = end_time - start_time
+                st.info(f"Processing completed in {processing_time:.2f} seconds.")
+                output_text_area.text_area("Output:", value=humanized_output, height=350, key="output_filled")
+                output_word_count.markdown(f"**Word count: {count_words(humanized_output)}**")
+                if "Error:" not in humanized_output:
+                    st.success("✅ Text humanization complete!")
+                else:
+                    st.error("Processing encountered an issue. See message above.")
         else:
             st.warning("Input text is empty or contains only whitespace.")
     else:
