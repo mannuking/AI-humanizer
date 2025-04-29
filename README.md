@@ -1,13 +1,15 @@
 # AI Text Humanizer - Undetectable ✨
 
-A Streamlit application that transforms AI-generated text into human-like content that can pass AI detection tools, while preserving the original meaning and maintaining the exact word count.
+A Streamlit application that transforms AI-generated text into human-like content that can pass AI detection tools, while preserving the original meaning, formatting, and maintaining the exact word count.
 
-![AI Humanizer App Screenshot](https://via.placeholder.com/800x400?text=AI+Humanizer+App)
 
 ## Features
 
 - **Humanize AI Text**: Transform AI-generated content to sound naturally human-written
 - **Maintain Word Count**: Preserves the exact word count from input to output
+- **Preserve Structure & Formatting**: Maintains original paragraphing, bullet points, numbered lists, and topic–explanation pairs
+- **Advanced Anti-Detection Techniques**: Uses sentence shuffling, synonym swaps, simulated typos, filler phrases, and more to evade AI detectors
+- **Academic/Research Paper Tone**: Optionally produces output in a formal, research-paper style
 - **Copy Functionality**: Easy-to-use copy buttons for both input and output text
 - **Word Counter**: Displays word count for input and output text
 - **Detection Avoidance**: Crafted to bypass common AI detection tools
@@ -15,11 +17,11 @@ A Streamlit application that transforms AI-generated text into human-like conten
 
 ## How It Works
 
-This application leverages Google's Gemini 2.5 Pro model to rewrite AI-generated text with human-like characteristics:
+This application leverages Google's Gemini 2.5 Pro model and advanced post-processing to rewrite AI-generated text with human-like characteristics:
 
-1. **Input**: Paste your AI-generated text in the left panel
-2. **Processing**: The app analyzes the text and rewrites it using advanced humanization techniques
-3. **Output**: Get naturally human-sounding text with the same word count and meaning
+1. **Input**: Paste your AI-generated text in the left panel (supports paragraphs, lists, and topic–explanation formats)
+2. **Processing**: The app analyzes the structure, splits the text into logical sections, and rewrites each using advanced humanization techniques
+3. **Output**: Get naturally human-sounding text with the same word count, meaning, and formatting as your input
 
 ## Installation
 
@@ -47,18 +49,25 @@ This application leverages Google's Gemini 2.5 Pro model to rewrite AI-generated
 
 ## Usage
 
-1. **Paste AI-generated text** in the input field on the left
+1. **Paste AI-generated text** in the input field on the left (supports lists, topics, and paragraphs)
 2. **Click "Humanize Text"** to process the text
-3. **Review the output** on the right panel
+3. **Review the output** on the right panel (structure and formatting will be preserved)
 4. **Copy the result** using the convenient copy button
 5. **Verify with detection tools** using the provided links (optional)
 
 ## Use Cases
 
-- Academic writing assistance
+- Academic writing assistance (research papers, essays, reports)
 - Content creation and marketing materials
 - Report and documentation preparation
 - Creative writing enhancement
+
+## Advanced Techniques
+
+- **Structure Preservation**: The app detects and preserves numbered/bulleted lists, topic–explanation pairs, and paragraph breaks.
+- **Chunked Humanization**: Each logical section is humanized separately to maintain clarity and flow.
+- **Aggressive Anti-Detection**: Post-processing includes synonym swaps, sentence shuffling, simulated typos, filler/self-reference phrases, and more.
+- **Academic Tone**: Output can be tailored to match the style of top-level research papers.
 
 ## Ethical Considerations
 
@@ -74,6 +83,7 @@ This tool is designed to improve the quality and readability of AI-generated con
 - Streamlit
 - Google Generative AI Python library
 - Python-dotenv
+- nltk (for advanced sentence processing)
 
 ## License
 
