@@ -341,6 +341,38 @@ def join_topics_explanations(pairs):
         out.append(f"{topic}\n{explanation}")
     return '\n\n'.join(out)
 
+def split_first_sentence(text):
+    """
+    Split text into the first sentence (or paragraph) and the rest.
+    Returns (first, rest).
+    """
+    import re
+    # Try to split by first period, exclamation, or question mark followed by space or newline
+    m = re.match(r'(.+?[.!?])([\s\n].*)', text, re.DOTALL)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    # Fallback: split by first paragraph
+    parts = text.split('\n', 1)
+    if len(parts) == 2:
+        return parts[0].strip(), parts[1].strip()
+    return text.strip(), ''
+
+def split_paragraphs(text):
+    """
+    Split text into paragraphs using double newlines or blank lines as separators.
+    Returns a list of paragraphs (including empty ones for perfect structure preservation).
+    """
+    import re
+    # Split on two or more newlines (or blank lines)
+    paras = re.split(r'\n\s*\n', text)
+    return [p for p in paras]
+
+def join_paragraphs(paragraphs):
+    """
+    Join paragraphs with double newlines to preserve original formatting.
+    """
+    return '\n\n'.join(paragraphs)
+
 # --- Core Function ---
 def humanize_text_academic(text, target_word_count):
     """
@@ -445,9 +477,13 @@ You are a distinguished professor and scientific writer with decades of experien
         return f"Error during processing: {e}"
 
 # --- Streamlit App Interface ---
-st.set_page_config(layout="wide") # Use wider layout for more space
+st.set_page_config(
+    page_title="HumanizeAI Academic Writer",
+    page_icon="🧑‍🎓",
+    layout="wide"
+)
 
-st.title("AI Text Humanizer - Undetectable ✨")
+st.title("HumanizeAI Academic Writer 🧑‍🎓")
 st.markdown(f"""
 This tool uses the **{MODEL_NAME}** model to transform AI-generated text into completely human-like content that passes AI detection checks.
 It preserves the original meaning while making the text appear naturally human-written, maintaining the exact word count from input to output.
@@ -475,85 +511,50 @@ if st.button("🚀 Humanize Text"):
     if input_text:
         cleaned_input = input_text.strip() # Remove leading/trailing whitespace
         if cleaned_input:
-            # Try to split as topic–explanation pairs
-            topic_pairs = split_topics_explanations(cleaned_input)
-            if len(topic_pairs) >= 2:
-                # Humanize each topic–explanation pair
-                total_word_count = count_words(cleaned_input)
-                pair_word_counts = [count_words(t + ' ' + e) for t, e in topic_pairs]
-                total_pairs_words = sum(pair_word_counts)
-                scale = total_word_count / total_pairs_words if total_pairs_words else 1
-                pair_word_counts = [max(1, round(w * scale)) for w in pair_word_counts]
-                diff = total_word_count - sum(pair_word_counts)
-                for i in range(abs(diff)):
-                    idx = i % len(pair_word_counts)
-                    if diff > 0:
-                        pair_word_counts[idx] += 1
-                    elif diff < 0 and pair_word_counts[idx] > 1:
-                        pair_word_counts[idx] -= 1
-                humanized_pairs = []
-                with st.spinner("🧠 Processing... Creating undetectable human-like text..."):
-                    start_time = time.time()
-                    for (topic, expl), wc in zip(topic_pairs, pair_word_counts):
-                        # Humanize explanation only, keep topic as is
-                        out = humanize_text_academic(expl, wc - count_words(topic)) if wc > count_words(topic) else expl
-                        if "Error:" not in out:
-                            out = advanced_humanize(out)
-                            out = ultra_humanize(out)
-                        humanized_pairs.append((topic, out))
-                    humanized_output = join_topics_explanations(humanized_pairs)
-                    end_time = time.time()
-                processing_time = end_time - start_time
-                st.info(f"Processing completed in {processing_time:.2f} seconds.")
-                output_text_area.text_area("Output:", value=humanized_output, height=350, key="output_filled")
-                output_word_count.markdown(f"**Word count: {count_words(humanized_output)}**")
-                if "Error:" not in humanized_output:
-                    st.success("✅ Text humanization complete!")
-                else:
-                    st.error("Processing encountered an issue. See message above.")
-            else:
-                # Fallback to previous structure-preserving chunking
-                # ...existing code for structured_chunks...
-                structured_chunks = split_preserve_structure(cleaned_input)
-                humanized_chunks = []
-                total_word_count = count_words(cleaned_input)
-                chunk_word_counts = []
-                for _, chunk in structured_chunks:
-                    chunk_word_counts.append(count_words(chunk))
-                total_chunks_words = sum(chunk_word_counts)
-                if total_chunks_words == 0:
-                    st.warning("Input text is empty or contains only whitespace.")
-                    st.stop()
-                scale = total_word_count / total_chunks_words
-                chunk_word_counts = [max(1, round(w * scale)) for w in chunk_word_counts]
-                diff = total_word_count - sum(chunk_word_counts)
-                for i in range(abs(diff)):
-                    idx = i % len(chunk_word_counts)
-                    if diff > 0:
-                        chunk_word_counts[idx] += 1
-                    elif diff < 0 and chunk_word_counts[idx] > 1:
-                        chunk_word_counts[idx] -= 1
-                with st.spinner("🧠 Processing... Creating undetectable human-like text..."):
-                    start_time = time.time()
-                    for (prefix, chunk), chunk_wc in zip(structured_chunks, chunk_word_counts):
-                        if chunk.strip():
-                            out = humanize_text_academic(chunk, chunk_wc)
-                            if "Error:" not in out:
-                                out = advanced_humanize(out)
-                                out = ultra_humanize(out)
-                            humanized_chunks.append((prefix, out))
+            # --- New: Structure-preserving paragraph split ---
+            paragraphs = split_paragraphs(cleaned_input)
+            total_word_count = count_words(cleaned_input)
+            para_word_counts = [count_words(p) for p in paragraphs]
+            total_paras_words = sum(para_word_counts)
+            scale = total_word_count / total_paras_words if total_paras_words else 1
+            para_word_counts = [max(1, round(w * scale)) for w in para_word_counts]
+            diff = total_word_count - sum(para_word_counts)
+            for i in range(abs(diff)):
+                idx = i % len(para_word_counts)
+                if diff > 0:
+                    para_word_counts[idx] += 1
+                elif diff < 0 and para_word_counts[idx] > 1:
+                    para_word_counts[idx] -= 1
+            humanized_paragraphs = []
+            with st.spinner("🧠 Processing... Creating undetectable human-like text..."):
+                start_time = time.time()
+                for para, wc in zip(paragraphs, para_word_counts):
+                    if para.strip():
+                        # Preserve first sentence structure for each paragraph
+                        first, rest = split_first_sentence(para)
+                        first_wc = count_words(first)
+                        rest_wc = wc - first_wc
+                        first_human = humanize_text_academic(first, first_wc) if first_wc > 0 else ''
+                        if rest_wc > 0:
+                            rest_human = humanize_text_academic(rest, rest_wc)
+                            if "Error:" not in rest_human:
+                                rest_human = advanced_humanize(rest_human)
+                                rest_human = ultra_humanize(rest_human)
                         else:
-                            humanized_chunks.append((prefix, chunk))
-                    humanized_output = join_preserved_structure(humanized_chunks)
-                    end_time = time.time()
-                processing_time = end_time - start_time
-                st.info(f"Processing completed in {processing_time:.2f} seconds.")
-                output_text_area.text_area("Output:", value=humanized_output, height=350, key="output_filled")
-                output_word_count.markdown(f"**Word count: {count_words(humanized_output)}**")
-                if "Error:" not in humanized_output:
-                    st.success("✅ Text humanization complete!")
-                else:
-                    st.error("Processing encountered an issue. See message above.")
+                            rest_human = ''
+                        humanized_paragraphs.append((first_human + '\n' + rest_human).strip())
+                    else:
+                        humanized_paragraphs.append('')
+                humanized_output = join_paragraphs(humanized_paragraphs)
+                end_time = time.time()
+            processing_time = end_time - start_time
+            st.info(f"Processing completed in {processing_time:.2f} seconds.")
+            output_text_area.text_area("Output:", value=humanized_output, height=350, key="output_filled")
+            output_word_count.markdown(f"**Word count: {count_words(humanized_output)}**")
+            if "Error:" not in humanized_output:
+                st.success("✅ Text humanization complete!")
+            else:
+                st.error("Processing encountered an issue. See message above.")
         else:
             st.warning("Input text is empty or contains only whitespace.")
     else:
