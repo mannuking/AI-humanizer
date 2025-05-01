@@ -9,12 +9,19 @@ import random
 # --- Configuration ---
 load_dotenv()  # Load variables from .env file
 
-# Securely load API key
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-if not GEMINI_API_KEY:
-    st.error("Error: GEMINI_API_KEY not found. Please set it in your .env file.")
-    st.stop() # Stop execution if key is missing
+# Securely load API key - Check Streamlit secrets first, then env variables
+try:
+    # First check for Streamlit secrets (for Streamlit Cloud deployment)
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    st.info("Using API key from Streamlit secrets.")
+except (KeyError, FileNotFoundError):
+    # Fallback to environment variable (for local development)
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    if GEMINI_API_KEY:
+        st.info("Using API key from environment variables.")
+    else:
+        st.error("Error: GEMINI_API_KEY not found. Please set it in your .env file for local development or in Streamlit secrets for deployment.")
+        st.stop()  # Stop execution if key is missing
 
 # Configure the Gemini API
 try:
