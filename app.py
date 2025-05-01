@@ -1,4 +1,13 @@
 import streamlit as st
+
+# Set page config first - MUST be the first Streamlit command
+st.set_page_config(
+    page_title="HumanizeAI Academic Writer",
+    page_icon="🧑‍🎓",
+    layout="wide"
+)
+
+# Then import all other packages
 import google.generativeai as genai
 import time
 import os
@@ -645,12 +654,6 @@ You are a distinguished professor and scientific writer with decades of experien
         return f"Error during processing: {e}"
 
 # --- Streamlit App Interface ---
-st.set_page_config(
-    page_title="HumanizeAI Academic Writer",
-    page_icon="🧑‍🎓",
-    layout="wide"
-)
-
 st.title("HumanizeAI Academic Writer 🧑‍🎓")
 st.markdown(f"""
 This tool uses the **{MODEL_NAME}** model to transform AI-generated text into completely human-like content that passes AI detection checks.
