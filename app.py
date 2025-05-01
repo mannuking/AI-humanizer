@@ -380,6 +380,167 @@ def join_paragraphs(paragraphs):
     """
     return '\n\n'.join(paragraphs)
 
+def format_preserving_humanize(text, target_word_count):
+    """
+    Humanize text while carefully preserving its exact format, including bullet points,
+    lists, mathematical formulas, and other structured content.
+    
+    Args:
+      text: The input AI-generated academic text
+      target_word_count: Target word count to maintain
+    
+    Returns:
+      Humanized text with original formatting preserved
+    """
+    # Extract special formatting elements
+    special_formats = []
+    import re
+    
+    # Save exact structure of the original text
+    original_structure = text
+    
+    # Identify bullet points with their formatting
+    bullet_pattern = r'((?:^|\n)[ \t]*(?:[•\*o\-]|\d+\.|\d+\))[ \t]+.+(?:\n[ \t]+[^•\*o\-\d].+)*)'
+    
+    def save_bullet(match):
+        bullet = match.group(0)
+        special_formats.append(("BULLET", bullet))
+        return f"[FORMAT_PLACEHOLDER_{len(special_formats)-1}]"
+    
+    text_with_placeholders = re.sub(bullet_pattern, save_bullet, text, flags=re.MULTILINE)
+    
+    # Identify mathematical formulas and save them
+    math_pattern = r'(\[[^\]]+\]|\$[^\$]+\$|\\begin\{[^}]+\}.*?\\end\{[^}]+\})'
+    
+    def save_math(match):
+        formula = match.group(0)
+        special_formats.append(("MATH", formula))
+        return f"[FORMAT_PLACEHOLDER_{len(special_formats)-1}]"
+    
+    text_with_placeholders = re.sub(math_pattern, save_math, text_with_placeholders, flags=re.DOTALL)
+    
+    # Identify section headers
+    header_pattern = r'((?:^|\n)[ \t]*(?:\d+\.)*[ \t]*[A-Z][^\n:]{0,40}:[ \t]*\n)'
+    
+    def save_header(match):
+        header = match.group(0)
+        special_formats.append(("HEADER", header))
+        return f"[FORMAT_PLACEHOLDER_{len(special_formats)-1}]"
+    
+    text_with_placeholders = re.sub(header_pattern, save_header, text_with_placeholders)
+    
+    # Count words in the text with placeholders
+    actual_content = re.sub(r'\[FORMAT_PLACEHOLDER_\d+\]', '', text_with_placeholders)
+    actual_word_count = count_words(actual_content)
+    
+    # Humanize the text while maintaining placeholders
+    prompt = f"""
+You are a distinguished professor and scientific writer with decades of experience publishing in prestigious journals. Your task is to rewrite the provided text to be completely undetectable by AI detection systems while maintaining the highest standards of academic writing. Follow these guidelines exactly:
+
+**Core Task:** Transform the following text to be completely human-like while preserving its scholarly tone, academic precision, and core arguments.
+
+**CRITICALLY IMPORTANT - FORMAT PRESERVATION:**
+- YOU MUST NOT modify any placeholder markers like [FORMAT_PLACEHOLDER_X]. Keep them EXACTLY as they appear.
+- The output MUST maintain EXACTLY the same formatting structure as the input.
+- Preserve all paragraph breaks exactly as in the original.
+- Do not alter any special formatting elements marked by placeholders.
+
+**Word Count Target:**
+- The humanized text content should contain approximately {actual_word_count} words
+- Do NOT count FORMAT_PLACEHOLDER texts in your word count
+
+**Professional Academic Humanization Techniques:**
+- Replace AI-typical phrases with more natural academic expressions
+- Vary sentence structure within each paragraph
+- Use discipline-appropriate terminology consistently
+- Add subtle scholarly hedging where appropriate (e.g., "suggests that," "appears to indicate")
+- Include occasional scholarly self-references when relevant (e.g., "we propose," "our approach")
+- Use natural transitions between ideas
+
+**Input Text (with placeholders - DO NOT modify placeholders):**
+---
+{text_with_placeholders}
+---
+
+**Output Requirements:**
+- Provide ONLY the rewritten text
+- Do not include any explanations or comments in your response
+- Do not modify or remove placeholders marked as [FORMAT_PLACEHOLDER_X]
+"""
+
+    try:
+        # Generate humanized content while preserving placeholders
+        response = model.generate_content(
+            prompt,
+            safety_settings=[
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+            ],
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.75,  # Lower temperature for better formatting preservation
+                top_p=0.85,
+                top_k=40
+            )
+        )
+        
+        if response.parts:
+            output_text = response.text
+            
+            # Restore all special formatting elements
+            for i, (format_type, original_format) in enumerate(special_formats):
+                output_text = output_text.replace(f"[FORMAT_PLACEHOLDER_{i}]", original_format)
+            
+            # Verify structure preservation by checking line counts
+            if len(output_text.split('\n')) < len(text.split('\n')) * 0.8:
+                st.warning("Structure might be partially lost - attempting to restore...")
+                
+                # Simple structure restoration - keep bullet points intact
+                if re.search(r'(?:^|\n)[ \t]*(?:[•\*o\-]|\d+\.|\d+\))', text):
+                    # Extract all bullet points from original
+                    bullet_lines = []
+                    for line in text.split('\n'):
+                        if re.match(r'^[ \t]*(?:[•\*o\-]|\d+\.|\d+\))', line):
+                            bullet_lines.append(line)
+                    
+                    # Ensure at least bullet points are preserved
+                    humanized_paragraphs = output_text.split('\n\n')
+                    for i, bullet in enumerate(bullet_lines):
+                        if i < len(humanized_paragraphs):
+                            humanized_paragraphs[i] = bullet
+                    
+                    output_text = '\n\n'.join(humanized_paragraphs)
+            
+            # Use post-processing only on non-special format text
+            # Split the text by placeholders
+            parts = re.split(r'(\[FORMAT_PLACEHOLDER_\d+\])', output_text)
+            processed_parts = []
+            
+            for part in parts:
+                if not part.startswith('[FORMAT_PLACEHOLDER_'):
+                    # Apply very minimal post-processing
+                    part = synonym_swap(part)
+                processed_parts.append(part)
+            
+            final_text = ''.join(processed_parts)
+            
+            # Verify actual word count
+            actual_word_count_final = count_words(final_text)
+            if abs(actual_word_count_final - target_word_count) > target_word_count * 0.2:
+                st.warning(f"Word count differs significantly: got {actual_word_count_final}, expected {target_word_count}")
+            
+            return final_text
+            
+        elif response.prompt_feedback.block_reason:
+            return f"Error: Content blocked due to {response.prompt_feedback.block_reason}. Input may violate safety policies."
+        else:
+            return "Error: Received an empty response from the model. Please try again or rephrase the input."
+            
+    except Exception as e:
+        st.error(f"An error occurred during text generation: {e}")
+        return f"Error during processing: {e}"
+
 # --- Core Function ---
 def humanize_text_academic(text, target_word_count):
     """
@@ -518,50 +679,26 @@ if st.button("🚀 Humanize Text"):
     if input_text:
         cleaned_input = input_text.strip() # Remove leading/trailing whitespace
         if cleaned_input:
-            # --- New: Structure-preserving paragraph split ---
-            paragraphs = split_paragraphs(cleaned_input)
-            total_word_count = count_words(cleaned_input)
-            para_word_counts = [count_words(p) for p in paragraphs]
-            total_paras_words = sum(para_word_counts)
-            scale = total_word_count / total_paras_words if total_paras_words else 1
-            para_word_counts = [max(1, round(w * scale)) for w in para_word_counts]
-            diff = total_word_count - sum(para_word_counts)
-            for i in range(abs(diff)):
-                idx = i % len(para_word_counts)
-                if diff > 0:
-                    para_word_counts[idx] += 1
-                elif diff < 0 and para_word_counts[idx] > 1:
-                    para_word_counts[idx] -= 1
-            humanized_paragraphs = []
             with st.spinner("🧠 Processing... Creating undetectable human-like text..."):
                 start_time = time.time()
-                for para, wc in zip(paragraphs, para_word_counts):
-                    if para.strip():
-                        # Preserve first sentence structure for each paragraph
-                        first, rest = split_first_sentence(para)
-                        first_wc = count_words(first)
-                        rest_wc = wc - first_wc
-                        first_human = humanize_text_academic(first, first_wc) if first_wc > 0 else ''
-                        if rest_wc > 0:
-                            rest_human = humanize_text_academic(rest, rest_wc)
-                            if "Error:" not in rest_human:
-                                rest_human = advanced_humanize(rest_human)
-                                rest_human = ultra_humanize(rest_human)
-                        else:
-                            rest_human = ''
-                        humanized_paragraphs.append((first_human + '\n' + rest_human).strip())
-                    else:
-                        humanized_paragraphs.append('')
-                humanized_output = join_paragraphs(humanized_paragraphs)
+                
+                # Get the word count of the input
+                word_count = count_words(cleaned_input)
+                
+                # Use our new format-preserving humanizer
+                humanized_output = format_preserving_humanize(cleaned_input, word_count)
+                
                 end_time = time.time()
-            processing_time = end_time - start_time
-            st.info(f"Processing completed in {processing_time:.2f} seconds.")
-            output_text_area.text_area("Output:", value=humanized_output, height=350, key="output_filled")
-            output_word_count.markdown(f"**Word count: {count_words(humanized_output)}**")
-            if "Error:" not in humanized_output:
-                st.success("✅ Text humanization complete!")
-            else:
-                st.error("Processing encountered an issue. See message above.")
+                processing_time = end_time - start_time
+                st.info(f"Processing completed in {processing_time:.2f} seconds.")
+                
+                output_text_area.text_area("Output:", value=humanized_output, height=350, key="output_filled")
+                output_word_count.markdown(f"**Word count: {count_words(humanized_output)}**")
+                
+                if "Error:" not in humanized_output:
+                    st.success("✅ Text humanization complete!")
+                else:
+                    st.error("Processing encountered an issue. See message above.")
         else:
             st.warning("Input text is empty or contains only whitespace.")
     else:
