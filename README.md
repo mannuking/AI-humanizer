@@ -96,4 +96,4 @@ This tool is designed to improve the quality and readability of AI-generated con
 
 ---
 
-Created with ❤️ by [Your Name]
+Created with ❤️ by JAI
