@@ -48,6 +48,11 @@ def _print_report(text: str, verbose: bool = True) -> None:
         f"TTR {stats.type_token_ratio:.3f}   "
         f"reading ease {stats.reading_ease:.1f}"
     )
+    print(
+        f"  Layers  lexical {len(report.findings)}   "
+        f"threshold {len(report.counted_findings)}   "
+        f"document {len(report.document_findings)}"
+    )
     counted = report.counted_findings
     docs = report.document_findings
     total = len(report.findings) + len(counted) + len(docs)

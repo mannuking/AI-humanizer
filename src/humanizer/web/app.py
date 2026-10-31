@@ -62,7 +62,10 @@ def render_analysis(report, container=None) -> None:
 
     col_a, col_b, col_c = target.columns(3)
     col_a.metric("AI score", f"{report.overall_score:.3f}")
-    col_b.metric("Patterns found", len(report.findings))
+    col_b.metric(
+        "Patterns found",
+        len(report.findings) + len(report.counted_findings) + len(report.document_findings),
+    )
     col_c.metric("Words", stats.word_count)
 
     with target.expander("Breakdown", expanded=False):
