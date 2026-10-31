@@ -1,19 +1,3 @@
-# Humanizer
-
-**Rewrite AI-assisted text so it reads the way a person actually writes.**
-
-A Streamlit app and CLI that finds the tells of machine-written prose, rewrites
-the passage against a target style, and reports exactly what changed. Built on
-MiniMax.
-
-```bash
-uv sync
-uv run humanize
-```
-
-That is the whole setup. The UI opens on <http://localhost:8501>.
-
----
 
 ## What it actually does
 
