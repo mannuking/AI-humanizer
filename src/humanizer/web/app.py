@@ -85,17 +85,26 @@ def render_analysis(report, container=None) -> None:
             }
         )
 
-    if report.findings:
-        with target.expander(f"What to fix ({len(report.findings)})", expanded=True):
-            rows = [
-                {
-                    "line": f.detector and f.line,
+    total = (
+        len(report.findings)
+        + len(report.counted_findings)
+        + len(report.document_findings)
+    )
+    if total:
+        with target.expander(f"What to fix ({total})", expanded=True):
+            def row(f):
+                return {
+                    "line": f.line,
                     "pattern": f.detector,
                     "match": f.match[:60],
                     "suggestion": f.suggestion,
                 }
-                for f in report.top_findings(40)
-            ]
+
+            rows = (
+                [row(f) for f in report.top_findings(40)]
+                + [row(f) for f in report.counted_findings]
+                + [row(f) for f in report.document_findings[:20]]
+            )
             st.dataframe(rows, use_container_width=True, hide_index=True)
 
 

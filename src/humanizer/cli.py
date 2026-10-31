@@ -48,15 +48,24 @@ def _print_report(text: str, verbose: bool = True) -> None:
         f"TTR {stats.type_token_ratio:.3f}   "
         f"reading ease {stats.reading_ease:.1f}"
     )
-    if not report.findings:
+    counted = report.counted_findings
+    docs = report.document_findings
+    total = len(report.findings) + len(counted) + len(docs)
+    if not total:
         print("\n  No AI-writing patterns detected.")
         return
-    print(f"\n  Findings ({len(report.findings)}):")
+    print(f"\n  Findings ({total}):")
     for finding in report.top_findings(15 if verbose else 5):
         print(
             f"    line {finding.line:>3}  [{finding.category}] "
             f"{finding.detector}: \"{finding.match[:52]}\""
         )
+    for finding in counted[:10]:
+        print(f"    line {finding.line:>3}  [{finding.category}] "
+              f"{finding.detector}: {finding.match[:52]}")
+    for finding in docs[:10]:
+        print(f"    line {finding.line:>3}  [structure] "
+              f"{finding.detector}: {finding.match[:52]}")
     counts = report.detector_counts()
     if verbose and counts:
         print("\n  By detector:")

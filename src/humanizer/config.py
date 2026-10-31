@@ -55,7 +55,9 @@ class Config:
     base_url: str = field(
         default_factory=lambda: _env("MINIMAX_BASE_URL", "https://api.minimax.io/v1")
     )
-    model: str = field(default_factory=lambda: _env("MINIMAX_MODEL", "MiniMax-M2.5"))
+    # MiniMax-M3 is the safe default: the M2.x family retires on
+    # 2026-11-18 and M2 already returns 404.
+    model: str = field(default_factory=lambda: _env("MINIMAX_MODEL", "MiniMax-M3"))
     api_style: str = field(default_factory=lambda: _env("MINIMAX_API_STYLE", "openai"))
     timeout: float = field(default_factory=lambda: _env_float("MINIMAX_TIMEOUT", 120.0))
     max_retries: int = field(default_factory=lambda: _env_int("MINIMAX_MAX_RETRIES", 3))

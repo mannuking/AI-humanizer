@@ -14,7 +14,6 @@ build-time dependency on the JS sources.
 
 from __future__ import annotations
 
-import json
 import re
 import sys
 from pathlib import Path
@@ -33,8 +32,8 @@ def strip_js_comments(s: str) -> str:
     """Remove JS comments without damaging regex literals.
 
     A naive block-comment strip is wrong here: the source contains regex
-    literals like ``/\*\*[^*]+\*\*/g`` whose text looks like a block
-    comment opener, and stripping those silently deletes source code.
+    literals whose text looks like a block comment opener, and stripping
+    those silently deletes source code.
 
     Only block comments that begin a line are removed - that is the
     convention the reference sources follow for their JSDoc blocks.
@@ -61,7 +60,7 @@ def parse_string_array(src: str, name: str) -> list[str]:
 # any non-ASCII character (em dashes appear inside character classes), so the
 # body pattern must not exclude non-ASCII and must allow a bare / only when
 # it is not escaped and the literal is properly terminated.
-_JS_REGEX = re.compile(r"/((?:[^/\\\n]|\\.)+)/([gimsuy]*)")
+_JS_REGEX = re.compile(r"/((?:[^/\\]|\\.)+)/([gimsuy]*)")
 
 
 def parse_regex_array(src: str, name: str) -> list[str]:
@@ -69,15 +68,67 @@ def parse_regex_array(src: str, name: str) -> list[str]:
     return ["/" + m.group(1) + "/" + m.group(2) for m in _JS_REGEX.finditer(blk)]
 
 
+def scan_regex_literal(text: str, start: int) -> tuple[str, int] | None:
+    """Scan one JS regex literal starting at ``text[start] == '/'``.
+
+    Returns ``(literal, end_index)`` or None. Handles escaped characters
+    and character classes, so a body may contain a slash inside ``[...]``
+    and may span several lines - 22 of the 109 phrase entries are written
+    that way.
+    """
+    if start >= len(text) or text[start] != "/":
+        return None
+    i = start + 1
+    in_class = False
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\" and i + 1 < len(text):
+            i += 2
+            continue
+        if ch == "[":
+            in_class = True
+        elif ch == "]":
+            in_class = False
+        elif ch == "/" and not in_class:
+            j = i + 1
+            while j < len(text) and text[j] in "gimsuy":
+                j += 1
+            return text[start:j], j
+        elif ch == "\n" and not in_class:
+            return None  # never closed
+        i += 1
+    return None
+
+
 def parse_ai_phrases(src: str) -> list[dict]:
+    """Extract the AI_PHRASES entries: a regex, a tier, and a fix hint."""
     blk = strip_js_comments(const_block(src, "AI_PHRASES"))
     out = []
-    for m in re.finditer(
-        r"\{\s*pattern:\s*/((?:[^/\\\n]|\\.)+)/([gimsuy]*)\s*,\s*tier:\s*(\d)\s*,\s*fix:\s*'((?:[^'\\]|\\.)*)'\s*\}",
-        blk, re.S,
-    ):
-        out.append({"regex": "/" + m.group(1) + "/" + m.group(2),
-                    "tier": int(m.group(3)), "fix": m.group(4)})
+    pos = 0
+    while True:
+        idx = blk.find("pattern:", pos)
+        if idx < 0:
+            break
+        slash = blk.find("/", idx)
+        scanned = scan_regex_literal(blk, slash) if slash >= 0 else None
+        if scanned is None:
+            pos = idx + len("pattern:")
+            continue
+        text, end = scanned
+        tail = blk[end:end + 220]
+        tier_m = re.search(r"tier:\s*(\d)", tail)
+        # The fix hint is a quoted string. Most entries use single quotes;
+        # one uses double quotes, so both are accepted.
+        fix_m = re.search(r"fix:\s*'((?:[^'\\]|\\.)*)'", tail) or re.search(
+            r'fix:\s*"((?:[^"\\]|\\.)*)"', tail
+        )
+        if tier_m and fix_m:
+            out.append({
+                "regex": text,
+                "tier": int(tier_m.group(1)),
+                "fix": fix_m.group(1),
+            })
+        pos = end
     return out
 
 

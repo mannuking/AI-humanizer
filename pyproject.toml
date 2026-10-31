@@ -36,6 +36,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/humanizer"]
 
+[tool.hatch.build.targets.sdist]
+include = ["src/humanizer", "scripts", "tests", "docs", "README.md", "LICENSE"]
+
+[tool.uv]
+package = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

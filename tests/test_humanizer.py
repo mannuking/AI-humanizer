@@ -8,15 +8,14 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 
 import pytest
 
-from humanizer import analyze, data, preservation, profiles, structure
+from humanizer import data, document, preservation, profiles, structure
 from humanizer.analyze import analyze as analyze_text
 from humanizer.llm import EchoBackend, MiniMaxClient, MiniMaxError
 from humanizer.pipeline import Humanizer
-from humanizer.prompts import build_rewrite_prompt, build_review_prompt
+from humanizer.prompts import build_review_prompt, build_rewrite_prompt
 from humanizer.structure import word_count
 
 # ----------------------------------------------------------------------
@@ -109,17 +108,16 @@ class TestDataCatalogue:
             }
 
     def test_all_regexes_compile(self):
-        import re
 
         for p in data.PATTERNS:
             for rx in p["regexes"]:
-                re.compile(rx)
+                re.compile(rx)  # noqa: B007
         for rx, _tier, _fix in data.AI_PHRASES:
             re.compile(rx)
 
     def test_ai_phrases_are_well_formed(self):
         assert len(data.AI_PHRASES) >= 50
-        for rx, tier, fix in data.AI_PHRASES:
+        for _rx, tier, fix in data.AI_PHRASES:
             assert 1 <= tier <= 3
             assert fix
 
@@ -155,12 +153,12 @@ class TestAnalysis:
 
     def test_curly_quotes_are_detected(self):
         report = analyze_text("She said \u201chello\u201d and left.")
-        assert any("Curly quotes" == f.detector for f in report.findings)
+        assert any(f.detector == "Curly quotes" for f in report.findings)
 
     def test_em_dash_overuse_is_detected(self):
         text = "One thing \u2014 and another \u2014 and a third \u2014 happened."
         report = analyze_text(text)
-        assert any("Em dash" in f.detector for f in report.findings)
+        assert any("Em dash" in f.detector for f in report.counted_findings)
 
     def test_burstiness_is_higher_for_human_text(self):
         human = analyze_text(HUMAN_TEXT).stats
@@ -191,6 +189,88 @@ class TestAnalysis:
             "high - strong AI signature",
             "very high - pervasive AI signature",
         }
+
+
+# ----------------------------------------------------------------------
+# document-scale patterns
+# ----------------------------------------------------------------------
+
+
+DOCUMENT_AI_TEXT = """Let's dive in.
+
+The team ran the study over six months. It produced a lot of data. The data was
+useful.
+
+This does not mean the method failed. It means the sample was too small.
+
+To be clear, I am not saying the approach was wrong. I am saying it needs more
+work.
+
+That is the real win.
+"""
+
+
+class TestDocumentPatterns:
+    def test_staged_runup_is_detected(self):
+        found = document.detect_document_patterns(DOCUMENT_AI_TEXT)
+        assert any(f.detector == "Staged run-up" for f in found)
+
+    def test_contrast_split_is_detected(self):
+        found = document.detect_document_patterns(DOCUMENT_AI_TEXT)
+        assert any("Contrast split" in f.detector for f in found)
+
+    def test_arguing_with_no_one_needs_several(self):
+        found = document.detect_document_patterns(DOCUMENT_AI_TEXT)
+        assert any(f.detector == "Arguing with no one" for f in found)
+
+    def test_a_single_rejection_is_not_flagged(self):
+        text = "To be clear, the deadline moved to Friday."
+        found = document.detect_document_patterns(text)
+        assert not any(f.detector == "Arguing with no one" for f in found)
+
+    def test_one_line_closer_is_detected(self):
+        text = (
+            "The migration moved three services onto the new platform and cut "
+            "the deploy time from forty minutes to four.\n\n"
+            "The migration cut the deploy time from forty minutes to four.\n"
+        )
+        found = document.detect_document_patterns(text)
+        assert any(f.detector == "One-line closer" for f in found)
+
+    def test_a_deep_closer_is_detected(self):
+        text = "The migration cut the deploy time from forty minutes to four.\n\nThat is the real win.\n"
+        found = document.detect_document_patterns(text)
+        assert any(f.detector == "Closing line that sounds deep" for f in found)
+
+    def test_repeated_openings_are_detected(self):
+        text = (
+            "The team reviewed the results carefully. The team flagged two "
+            "outliers in the data. The team wrote up the summary that evening."
+        )
+        found = document.detect_document_patterns(text)
+        assert any("Repeated sentence openings" in f.detector for f in found)
+
+    def test_human_text_has_few_document_findings(self):
+        found = document.detect_document_patterns(HUMAN_TEXT)
+        assert len(found) <= 2
+
+    def test_empty_text_is_safe(self):
+        assert document.detect_document_patterns("") == []
+
+    def test_document_findings_appear_in_the_report(self):
+        report = analyze_text(DOCUMENT_AI_TEXT)
+        assert report.document_findings
+        assert "document_findings" in report.as_dict()
+
+    def test_document_findings_count_towards_the_score(self):
+        plain = analyze_text("A short plain sentence about the work.")
+        rich = analyze_text(DOCUMENT_AI_TEXT)
+        assert rich.overall_score > plain.overall_score
+
+    def test_detector_counts_include_document_detectors(self):
+        report = analyze_text(DOCUMENT_AI_TEXT)
+        counts = report.detector_counts()
+        assert any("Staged run-up" in name for name in counts)
 
 
 # ----------------------------------------------------------------------

@@ -24,18 +24,18 @@ knows what the first one failed to fix.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from .analyze import Report, analyze
 from .config import Config
-from .prompts import build_rewrite_prompt, build_review_prompt
-from .preservation import ProtectedSpans, extract, strip_placeholders
+from .preservation import extract, strip_placeholders
 from .profiles import Profile, get_profile
+from .prompts import build_review_prompt, build_rewrite_prompt
 from .structure import (
     Block,
     join_blocks,
-    protect,
     restore_list_markers,
     split_blocks,
     word_count,
@@ -108,14 +108,17 @@ class Humanizer:
 
     def _summarize_findings(self, report: Report, limit: int = 12) -> str:
         """A short list of the detected tells, for the prompt."""
-        if not report.findings:
-            return ""
         lines = []
         for f in report.findings[:limit]:
             lines.append(f'- "{f.match}" ({f.detector})')
         extra = len(report.findings) - limit
         if extra > 0:
             lines.append(f"- ...and {extra} more of the same kind")
+        # Document-scale tells are structural, and the model needs to know
+        # about them explicitly - a one-line closing paragraph cannot be
+        # fixed by swapping a word.
+        for f in report.document_findings[:6]:
+            lines.append(f'- {f.detector}: "{f.match}" ({f.suggestion})')
         return "\n".join(lines)
 
     def _chunk_blocks(self, blocks: list[Block]) -> list[list[Block]]:

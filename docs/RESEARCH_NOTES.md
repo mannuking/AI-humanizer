@@ -210,10 +210,10 @@ engines and the Wikipedia guide they are built on. It contains:
 
 - **30 named detectors** in five categories — content, language, style,
   communication, filler — each with a weight and a description
-- **295 tiered vocabulary terms** — tier 1 is the unmistakable vocabulary
+- **282 tiered vocabulary terms** — tier 1 is the unmistakable vocabulary
   (delve, tapestry, vibrant, realm, seamless), tier 3 is the generic
   (significant, crucial, robust)
-- **87 stock phrases** with the regex that detects them and a fix hint
+- **109 stock phrases** with the regex that detects them and a fix hint
 
 The generator handles the JavaScript/Python dialect differences:
 

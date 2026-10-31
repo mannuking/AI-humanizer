@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import data
+from .document import DocumentFinding, detect_document_patterns
+from .thresholds import CountFinding, detect_counted_patterns
 
 # --------------------------------------------------------------------------
 # lexical layer
@@ -66,20 +68,38 @@ class Finding:
         }
 
 
+#: Detectors whose logic is a threshold or a condition rather than a
+#: plain regex match. Their extracted regexes are only unit extractors -
+#: running them as plain scans makes "/[.!?]+/" match ordinary punctuation
+#: and "/^[A-Z]/" match any capital letter. The real logic is in
+#: :mod:`humanizer.thresholds`.
+_THRESHOLD_DETECTORS = {
+    "Synonym cycling",
+    "Title Case headings",
+    "Inline-header lists",
+    "Excessive structure",
+    "Em dash overuse",
+    "Boldface overuse",
+    "Emoji overuse",
+}
+
+
 def _compile_all() -> list[tuple[dict, list[re.Pattern]]]:
     """Pre-compile every detector's regexes once, at import time."""
     compiled: list[tuple[dict, list[re.Pattern]]] = []
     for det in data.PATTERNS:
+        if det["name"] in _THRESHOLD_DETECTORS:
+            continue
         patterns: list[re.Pattern] = []
         for rx in det["regexes"]:
             try:
-                patterns.append(re.compile(rx, re.IGNORECASE))
+                patterns.append(re.compile(rx, re.IGNORECASE | re.MULTILINE))
             except re.error:
                 continue
         for const in det.get("shared_consts", ()):
             for rx in _SHARED_LOOKUP.get(const, ()):
                 try:
-                    patterns.append(re.compile(rx, re.IGNORECASE))
+                    patterns.append(re.compile(rx, re.IGNORECASE | re.MULTILINE))
                 except re.error:
                     continue
         if patterns:
@@ -383,6 +403,10 @@ class Report:
 
     text: str = ""
     findings: list[Finding] = field(default_factory=list)
+    #: Patterns that only appear at the scale of a paragraph or document.
+    document_findings: list[DocumentFinding] = field(default_factory=list)
+    #: Findings from the threshold-based detectors.
+    counted_findings: list[CountFinding] = field(default_factory=list)
     stats: Stats = field(default_factory=Stats)
     pattern_score: float = 0.0
     style_score: float = 0.0
@@ -398,6 +422,26 @@ class Report:
             "stats": self.stats.as_dict(),
             "findings": [f.as_dict() for f in self.findings],
             "finding_count": len(self.findings),
+            "counted_findings": [
+                {
+                    "detector": f.detector,
+                    "match": f.match,
+                    "line": f.line,
+                    "suggestion": f.suggestion,
+                    "weight": f.weight,
+                }
+                for f in self.counted_findings
+            ],
+            "document_findings": [
+                {
+                    "detector": f.detector,
+                    "match": f.match,
+                    "line": f.line,
+                    "suggestion": f.suggestion,
+                    "weight": f.weight,
+                }
+                for f in self.document_findings
+            ],
             "detector_counts": self.detector_counts(),
         }
 
@@ -405,21 +449,39 @@ class Report:
         counts: dict[str, int] = {}
         for f in self.findings:
             counts[f.detector] = counts.get(f.detector, 0) + 1
+        for f in self.document_findings:
+            counts[f.detector] = counts.get(f.detector, 0) + 1
+        for f in self.counted_findings:
+            counts[f.detector] = counts.get(f.detector, 0) + 1
         return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
 
     def top_findings(self, limit: int = 10) -> list[Finding]:
         return self.findings[:limit]
 
 
-def _pattern_score(findings: list[Finding], word_count: int) -> float:
+def _pattern_score(
+    findings: list[Finding],
+    word_count: int,
+    document_findings: list[DocumentFinding] | None = None,
+    counted_findings: list[CountFinding] | None = None,
+) -> float:
     """Density of weighted pattern hits, normalised per 100 words.
 
     A short text with one hit should not look as bad as a long text with
     one hit, so the raw weight is scaled by length before it saturates.
+
+    Document-scale findings count at half weight: they are weaker signals
+    on their own, but several together are meaningful.
     """
-    if not findings or not word_count:
+    if not word_count:
         return 0.0
     total_weight = sum(f.weight for f in findings)
+    if document_findings:
+        total_weight += sum(f.weight for f in document_findings) * 0.5
+    if counted_findings:
+        total_weight += sum(f.weight for f in counted_findings)
+    if not total_weight:
+        return 0.0
     per_100 = (total_weight / word_count) * 100
     # Saturating curve: 40 weighted points per 100 words is very bad.
     return round(min(1.0, per_100 / 40.0), 4)
@@ -442,16 +504,16 @@ def _style_score(stats: Stats) -> float:
         burst = 0.0
 
     # Type-token ratio: 0.38-0.55 is normal for prose; lower is repetitive.
-    if stats.type_token_ratio < 0.40:
-        ttr = min(1.0, (0.45 - stats.type_token_ratio) / 0.20)
-    else:
-        ttr = 0.0
+    ttr = (
+        min(1.0, (0.45 - stats.type_token_ratio) / 0.20)
+        if stats.type_token_ratio < 0.40
+        else 0.0
+    )
 
     # Hapax ratio: a healthy share of words appear once.
-    if stats.hapax_ratio < 0.45:
-        hapax = min(1.0, (0.45 - stats.hapax_ratio) / 0.30)
-    else:
-        hapax = 0.0
+    hapax = (
+        min(1.0, (0.45 - stats.hapax_ratio) / 0.30) if stats.hapax_ratio < 0.45 else 0.0
+    )
 
     # Punctuation entropy: varied punctuation gives a higher value.
     if stats.punctuation_entropy < 1.6:
@@ -460,10 +522,9 @@ def _style_score(stats: Stats) -> float:
         punct = 0.0
 
     # Em dash density: one em dash per 100 words is already a lot.
-    if stats.em_dash_rate > 0.01:
-        em = min(1.0, (stats.em_dash_rate - 0.01) / 0.03)
-    else:
-        em = 0.0
+    em = (
+        min(1.0, (stats.em_dash_rate - 0.01) / 0.03) if stats.em_dash_rate > 0.01 else 0.0
+    )
 
     # Paragraph uniformity.
     if stats.avg_sentences_per_paragraph:
@@ -478,7 +539,7 @@ def _style_score(stats: Stats) -> float:
 
     components = [burst, ttr, hapax, punct, em, struct]
     weights = [0.30, 0.20, 0.15, 0.15, 0.10, 0.10]
-    return round(sum(c * w for c, w in zip(components, weights)), 4)
+    return round(sum(c * w for c, w in zip(components, weights, strict=True)), 4)
 
 
 def _band(score: float) -> str:
@@ -498,8 +559,12 @@ def analyze(text: str) -> Report:
     against its own rewrite; it is not evidence about authorship.
     """
     findings = detect_patterns(text)
+    doc_findings = detect_document_patterns(text)
+    counted = detect_counted_patterns(text, data.TIER_2, data.TIER_3)
     stats = compute_stats(text)
-    pattern_score = _pattern_score(findings, stats.word_count)
+    pattern_score = _pattern_score(
+        findings, stats.word_count, doc_findings, counted
+    )
     style_score = _style_score(stats)
     # The lexical layer dominates: a text that says "delve into the
     # intricate tapestry" reads as AI regardless of its sentence rhythm.
@@ -507,6 +572,8 @@ def analyze(text: str) -> Report:
     return Report(
         text=text,
         findings=findings,
+        document_findings=doc_findings,
+        counted_findings=counted,
         stats=stats,
         pattern_score=pattern_score,
         style_score=style_score,

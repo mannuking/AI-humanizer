@@ -84,9 +84,14 @@ class MiniMaxClient:
             }
         return {
             "model": self.config.model,
-            "max_tokens": max_tokens,
+            # max_tokens is deprecated on the OpenAI-compatible endpoint;
+            # max_completion_tokens is the current name.
+            "max_completion_tokens": max_tokens,
             "temperature": temperature,
             "top_p": self.config.top_p,
+            # reasoning_split keeps the model's internal reasoning in a
+            # separate field instead of inline in the content.
+            "reasoning_split": True,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -150,6 +155,12 @@ class MiniMaxClient:
                         part.get("text", "") for part in text if isinstance(part, dict)
                     )
                 )
+            # With reasoning_split enabled the model may put the answer in
+            # a separate field and leave content empty.
+            for key in ("reasoning_content", "reasoning"):
+                value = message.get(key)
+                if isinstance(value, str) and value.strip():
+                    return cls._strip_thinking(value)
 
         # Some MiniMax responses use a flat "reply" field.
         for key in ("reply", "output", "text"):
