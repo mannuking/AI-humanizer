@@ -18,6 +18,7 @@ _SRC = Path(__file__).resolve().parents[2]
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
+from humanizer import perplexity as px  # noqa: E402
 from humanizer.analyze import analyze  # noqa: E402
 from humanizer.config import load_config  # noqa: E402
 from humanizer.llm import MiniMaxError, build_client  # noqa: E402
@@ -67,6 +68,30 @@ def render_analysis(report, container=None) -> None:
         len(report.findings) + len(report.counted_findings) + len(report.document_findings),
     )
     col_c.metric("Words", stats.word_count)
+
+    if report.perplexity is not None and not report.perplexity.unavailable:
+        with target.expander(
+            "Language-model measurement", expanded=False
+        ):
+            st.caption(
+                "This is the measurement the commercial detectors use: how "
+                "predictable the text is to a language model. Lower perplexity "
+                "means more machine-like."
+            )
+            st.json(
+                {
+                    "perplexity": round(report.perplexity.perplexity, 2),
+                    "mean_nll": round(report.perplexity.mean_nll, 4),
+                    "token_count": report.perplexity.token_count,
+                    "mean_token_rank": round(report.perplexity.mean_rank, 3),
+                    "top_choice_share": round(report.perplexity.top_choice_share, 4),
+                    **(
+                        report.burstiness.as_dict()
+                        if report.burstiness
+                        else {}
+                    ),
+                }
+            )
 
     if report.artifacts.found:
         with target.expander(
@@ -228,7 +253,7 @@ if analyse_now:
     if not source.strip():
         st.warning("Paste some text first.")
     else:
-        report = analyze(source)
+        report = analyze(source, with_perplexity=px.available())
         with output_area.container():
             render_analysis(report)
 

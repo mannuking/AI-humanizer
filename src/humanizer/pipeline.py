@@ -28,6 +28,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import perplexity as px
 from .analyze import Report, analyze
 from .config import Config
 from .preservation import extract, strip_placeholders
@@ -132,16 +133,37 @@ class Humanizer:
         the sentence that reads as machine-written even when every word
         is individually ordinary, so those are the sentences worth
         rewriting first.
+
+        When a local language model is reachable, the measurement is
+        sharper: perplexity finds the predictable sentences that a
+        phrase catalogue cannot see, which is exactly the technical
+        prose where the catalogue has nothing to say.
         """
         spans = predictable_sentences(text, top=top)
-        if not spans:
+        if spans:
+            lines = [
+                "These sentences use only the most common vocabulary, which is "
+                "the single strongest machine-writing signal. Rewrite them to "
+                "use specific words:",
+            ]
+            for span in spans:
+                lines.append(f'- "{span.text[:140]}"')
+            return "\n".join(lines)
+
+        # No catalogue hit - fall back to the language model's own
+        # judgement of which sentences are the most predictable.
+        try:
+            model_spans = px.predictable_sentences(text, top=top)
+        except Exception:  # noqa: BLE001 - the model is optional
+            return ""
+        if not model_spans:
             return ""
         lines = [
-            "These sentences use only the most common vocabulary, which is "
-            "the single strongest machine-writing signal. Rewrite them to "
-            "use specific words:",
+            "A language model finds these sentences the most predictable, "
+            "which is the single strongest machine-writing signal. Rewrite "
+            "them to use specific, less predictable wording:",
         ]
-        for span in spans:
+        for span in model_spans:
             lines.append(f'- "{span.text[:140]}"')
         return "\n".join(lines)
 

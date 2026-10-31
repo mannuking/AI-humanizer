@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import data
+from . import perplexity as px
 from .document import DocumentFinding, detect_document_patterns
 from .guards import filter_findings
 from .thresholds import CountFinding, detect_counted_patterns
@@ -417,6 +418,11 @@ class Report:
     token_profile: TokenProfile = field(default_factory=TokenProfile)
     #: Typographic artifacts found in the text.
     artifacts: ArtifactReport = field(default_factory=ArtifactReport)
+    #: The perplexity measurement - what the commercial detectors
+    #: actually use. Unavailable when no local model is reachable.
+    perplexity: px.PerplexityResult | None = None
+    #: Sentence-length variation.
+    burstiness: px.BurstinessResult | None = None
     stats: Stats = field(default_factory=Stats)
     pattern_score: float = 0.0
     style_score: float = 0.0
@@ -434,6 +440,8 @@ class Report:
             "finding_count": len(self.findings),
             "token_profile": self.token_profile.as_dict(),
             "artifacts": self.artifacts.as_dict(),
+            "perplexity": self.perplexity.as_dict() if self.perplexity else None,
+            "burstiness": self.burstiness.as_dict() if self.burstiness else None,
             "counted_findings": [
                 {
                     "detector": f.detector,
@@ -575,11 +583,17 @@ def _band(score: float) -> str:
     return "very high - pervasive AI signature"
 
 
-def analyze(text: str) -> Report:
+def analyze(text: str, with_perplexity: bool = False) -> Report:
     """Analyse ``text`` and return the full report.
 
     The score is a style estimate. It is useful for comparing a draft
     against its own rewrite; it is not evidence about authorship.
+
+    Set ``with_perplexity`` to also measure the passage against a local
+    language model. That is what the commercial detectors do, and it
+    catches what a phrase catalogue cannot: a dense technical passage
+    with no catalogue phrases but uniform, predictable syntax. The
+    measurement needs a local model, so it is off by default.
     """
     # A watched phrase inside a quotation, a title, a code span or a
     # citation is not the writer using it - it is the writer discussing
@@ -594,9 +608,32 @@ def analyze(text: str) -> Report:
         findings, stats.word_count, doc_findings, counted
     )
     style_score = _style_score(stats, tokens, artifact_score(text))
+
+    perpl = None
+    burst = None
+    if with_perplexity:
+        perpl = px.score(text)
+        burst = px.burstiness(text)
+
     # The lexical layer dominates: a text that says "delve into the
     # intricate tapestry" reads as AI regardless of its sentence rhythm.
     overall = round(0.65 * pattern_score + 0.35 * style_score, 4)
+
+    # When a local model is available, its verdict is the stronger
+    # evidence - it is the same measurement the commercial detectors
+    # make. It is blended in rather than replacing the lexical score,
+    # so a phrase-catalogue hit still shows even when the perplexity is
+    # unremarkable.
+    if perpl is not None and not perpl.unavailable:
+        cal = px.load_calibration()
+        if cal.p50_human > 0 and cal.p50_ai > cal.p50_human:
+            ppl_score = px.perplexity_score(perpl, cal)
+            burst_score = px.burstiness_score(burst, cal) if burst else 0.0
+            model_score = round(0.7 * ppl_score + 0.3 * burst_score, 4)
+            overall = round(
+                max(overall, 0.55 * model_score + 0.45 * overall), 4
+            )
+
     return Report(
         text=text,
         findings=findings,
@@ -604,6 +641,8 @@ def analyze(text: str) -> Report:
         counted_findings=counted,
         token_profile=tokens,
         artifacts=artifacts,
+        perplexity=perpl,
+        burstiness=burst,
         stats=stats,
         pattern_score=pattern_score,
         style_score=style_score,

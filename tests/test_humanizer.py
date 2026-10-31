@@ -15,6 +15,7 @@ from humanizer import (
     data,
     document,
     guards,
+    perplexity,
     preservation,
     profiles,
     reasoning_guard,
@@ -346,6 +347,106 @@ class TestGuardrails:
     def test_empty_text_is_safe(self):
         assert guards.guarded_regions("") == []
         assert guards.filter_findings([], "") == []
+
+
+# ----------------------------------------------------------------------
+# perplexity
+# ----------------------------------------------------------------------
+
+
+class TestPerplexity:
+    def test_burstiness_of_uniform_sentences_is_low(self):
+        text = (
+            "The filter runs. It checks the data. It flags the bad rows. "
+            "It writes the log. It sends the summary."
+        )
+        assert perplexity.burstiness(text).cv < 0.25
+
+    def test_burstiness_of_varied_sentences_is_high(self):
+        text = (
+            "It ran. "
+            "The scheduler had been misconfigured since the March upgrade, "
+            "which nobody noticed because the retries masked it. "
+            "We found it in June. "
+            "Twelve hours of debugging, mostly in the wrong place."
+        )
+        assert perplexity.burstiness(text).cv > 0.4
+
+    def test_an_abbreviation_does_not_split_a_sentence(self):
+        text = "The filter works, e.g. when the baseline holds. It runs."
+        assert perplexity.burstiness(text).sentence_count == 2
+
+    def test_empty_text_gives_a_zero_result(self):
+        assert perplexity.burstiness("").cv == 0.0
+        assert perplexity.burstiness("").sentence_count == 0
+
+    def test_a_missing_calibration_file_does_not_raise(self, tmp_path):
+        cal = perplexity.load_calibration(str(tmp_path / "nope.json"))
+        assert cal.p50_human == 0.0
+        assert perplexity.perplexity_score(
+            perplexity.PerplexityResult(mean_nll=0.4), cal
+        ) == 0.0
+
+    def test_the_score_runs_from_human_median_to_ai_median(self):
+        # AI text is MORE predictable, so its median nll is LOWER than
+        # the human median. The score runs from human (0) to AI (1).
+        cal = perplexity.Calibration(p50_human=0.5, p50_ai=0.3)
+        # At the human median -> 0.
+        human = perplexity.PerplexityResult(mean_nll=0.5)
+        # At the AI median -> 1.
+        ai = perplexity.PerplexityResult(mean_nll=0.3)
+        # Below the AI median -> saturated at 1.
+        very_ai = perplexity.PerplexityResult(mean_nll=0.1)
+        # Above the human median -> saturated at 0.
+        very_human = perplexity.PerplexityResult(mean_nll=0.9)
+        assert perplexity.perplexity_score(human, cal) == 0.0
+        assert perplexity.perplexity_score(ai, cal) == 1.0
+        assert perplexity.perplexity_score(very_ai, cal) == 1.0
+        assert perplexity.perplexity_score(very_human, cal) == 0.0
+
+    def test_a_passage_between_the_two_medians_scales(self):
+        cal = perplexity.Calibration(p50_human=0.5, p50_ai=0.3)
+        middle = perplexity.PerplexityResult(mean_nll=0.4)
+        assert perplexity.perplexity_score(middle, cal) == 0.5
+
+    def test_burstiness_runs_from_human_to_ai(self):
+        # AI text has UNIFORM sentences, so its median cv is LOWER.
+        cal = perplexity.Calibration(
+            human_burstiness_p50=0.5, ai_burstiness_p50=0.2
+        )
+        human = perplexity.BurstinessResult(cv=0.5)
+        ai = perplexity.BurstinessResult(cv=0.2)
+        middle = perplexity.BurstinessResult(cv=0.35)
+        assert perplexity.burstiness_score(human, cal) == 0.0
+        assert perplexity.burstiness_score(ai, cal) == 1.0
+        assert perplexity.burstiness_score(middle, cal) == 0.5
+
+    def test_an_unavailable_measurement_scores_zero(self):
+        cal = perplexity.Calibration(p50_human=0.4, p50_ai=0.3)
+        unavailable = perplexity.PerplexityResult(unavailable=True)
+        assert perplexity.perplexity_score(unavailable, cal) == 0.0
+
+    def test_the_percentile(self):
+        assert perplexity.percentile([1, 2, 3, 4, 5], 50) == 3
+        assert perplexity.percentile([1, 2, 3, 4, 5], 0) == 1
+        assert perplexity.percentile([1, 2, 3, 4, 5], 100) == 5
+
+    def test_the_calibration_file_round_trips(self, tmp_path):
+        path = tmp_path / "cal.json"
+        cal = perplexity.Calibration(
+            p50_human=0.4, p90_human=0.5, p50_ai=0.3, p90_ai=0.35,
+            sample_size_human=10, sample_size_ai=8,
+        )
+        perplexity.save_calibration(cal, str(path))
+        loaded = perplexity.load_calibration(str(path))
+        assert loaded.p50_human == 0.4
+        assert loaded.sample_size_human == 10
+
+    def test_the_analyzer_still_works_without_a_local_model(self):
+        # The perplexity layer must never be required.
+        r = analyze_text(AI_TEXT)
+        assert r.overall_score > 0
+        assert r.perplexity is None
 
 
 # ----------------------------------------------------------------------
