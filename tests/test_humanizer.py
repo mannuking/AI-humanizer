@@ -11,7 +11,7 @@ import re
 
 import pytest
 
-from humanizer import data, document, preservation, profiles, structure
+from humanizer import data, document, guards, preservation, profiles, structure
 from humanizer.analyze import analyze as analyze_text
 from humanizer.llm import EchoBackend, MiniMaxClient, MiniMaxError
 from humanizer.pipeline import Humanizer
@@ -271,6 +271,57 @@ class TestDocumentPatterns:
         report = analyze_text(DOCUMENT_AI_TEXT)
         counts = report.detector_counts()
         assert any("Staged run-up" in name for name in counts)
+
+
+# ----------------------------------------------------------------------
+# context guardrails
+# ----------------------------------------------------------------------
+
+
+class TestGuardrails:
+    def test_a_phrase_inside_a_quotation_is_not_flagged(self):
+        text = 'The reviewer wrote that "delve into the intricate tapestry" is what AI prose sounds like.'
+        report = analyze_text(text)
+        assert not any("tapestry" in f.match.lower() for f in report.findings)
+
+    def test_the_same_phrase_in_prose_is_flagged(self):
+        text = "The reviewer wrote that delve into the intricate tapestry is what AI prose sounds like."
+        report = analyze_text(text)
+        assert any("tapestry" in f.match.lower() for f in report.findings)
+
+    def test_a_phrase_in_a_heading_is_not_flagged(self):
+        report = analyze_text("## Delve Into The Intricate Tapestry")
+        assert not any("tapestry" in f.match.lower() for f in report.findings)
+
+    def test_a_phrase_in_a_code_span_is_not_flagged(self):
+        text = "Use the `delve into the intricate tapestry` marker in the config."
+        report = analyze_text(text)
+        assert not any("tapestry" in f.match.lower() for f in report.findings)
+
+    def test_a_phrase_in_a_link_target_is_not_flagged(self):
+        text = "See [the tapestry of learning](https://example.org/intricate-delve)."
+        report = analyze_text(text)
+        assert not any("tapestry" in f.match.lower() for f in report.findings)
+
+    def test_a_phrase_used_in_prose_is_still_flagged_when_it_also_appears_quoted(self):
+        text = 'He wrote "delve into the tapestry". Then I wrote delve into the tapestry myself.'
+        report = analyze_text(text)
+        assert any("tapestry" in f.match.lower() for f in report.findings)
+
+    def test_a_quotation_does_not_hide_other_findings(self):
+        text = 'She said "delve" while the report called the framework a vibrant tapestry of learning.'
+        report = analyze_text(text)
+        assert any("vibrant" in f.match.lower() for f in report.findings)
+
+    def test_guards_find_the_expected_regions(self):
+        regions = guards.guarded_regions('A "quoted bit" here.')
+        assert regions
+        start, end = regions[0]
+        assert "quoted bit" in "A " + "quoted bit" + " here."[start:end]
+
+    def test_empty_text_is_safe(self):
+        assert guards.guarded_regions("") == []
+        assert guards.filter_findings([], "") == []
 
 
 # ----------------------------------------------------------------------

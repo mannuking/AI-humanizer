@@ -169,6 +169,23 @@ rather than paraphrases. The threshold and document layers live in
 [`thresholds.py`](src/humanizer/thresholds.py) and
 [`document.py`](src/humanizer/document.py).
 
+### The context guardrails
+
+A watched phrase inside a quotation, a heading, a code span, a link target or
+a citation is not the writer using it — it is the writer discussing it. The
+catalogue is explicit about this, and it is the difference between a detector
+that reads like a person and one that gets ignored:
+
+> Leave a watched phrase alone inside a quotation, a title, a proper name, or
+> a passage that discusses the phrase rather than uses it.
+
+So those regions are found before anything is scored, and matches inside them
+are suppressed. The same regions are protected from the rewrite, so a quoted
+passage comes back exactly as it went in.
+
+The one exception is the curly-quote detector, which reports on the quote
+characters themselves and is therefore never suppressed.
+
 ### The statistical layer
 
 | Metric | What it measures | Why it matters |
@@ -213,7 +230,7 @@ half weight — they are weaker signals alone, but several together matter.
 
 ```bash
 uv sync --extra dev
-uv run pytest tests/ -q      # 83 tests, no API key needed
+uv run pytest tests/ -q      # 92 tests, no API key needed
 uv run ruff check src/ tests/ scripts/
 ```
 

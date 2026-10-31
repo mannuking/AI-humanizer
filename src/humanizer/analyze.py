@@ -23,6 +23,7 @@ from typing import Any
 
 from . import data
 from .document import DocumentFinding, detect_document_patterns
+from .guards import filter_findings
 from .thresholds import CountFinding, detect_counted_patterns
 
 # --------------------------------------------------------------------------
@@ -558,7 +559,10 @@ def analyze(text: str) -> Report:
     The score is a style estimate. It is useful for comparing a draft
     against its own rewrite; it is not evidence about authorship.
     """
-    findings = detect_patterns(text)
+    # A watched phrase inside a quotation, a title, a code span or a
+    # citation is not the writer using it - it is the writer discussing
+    # it. Those matches are suppressed before anything is scored.
+    findings = filter_findings(detect_patterns(text), text)
     doc_findings = detect_document_patterns(text)
     counted = detect_counted_patterns(text, data.TIER_2, data.TIER_3)
     stats = compute_stats(text)

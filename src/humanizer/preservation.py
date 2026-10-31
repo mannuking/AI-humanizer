@@ -75,8 +75,19 @@ _CITATION = re.compile(
 #: Markdown emphasis markers wrapped around a phrase.
 _EMPHASIS = re.compile(r"\*\*[^*\n]{1,200}\*\*|__[^_\n]{1,200}__")
 
+#: A quoted passage. The rewrite must leave it exactly as the writer
+#: quoted it - rephrasing a quotation changes what is being quoted.
+#: It comes before the other patterns so a quoted URL or number is
+#: guarded as part of the quotation rather than separately.
+_QUOTED = re.compile(
+    r'"[^"\n]{1,2000}"'
+    r"|\u201c[^\u201d\n]{1,2000}\u201d"
+    r"|\u2018[^\u2019\n]{1,2000}\u2019"
+)
+
 #: Ordered by how badly a rewrite tends to damage them.
 _SPAN_PATTERNS = (
+    ("QUOTED", _QUOTED),
     ("URL", _URL),
     ("EMAIL", _EMAIL),
     ("DOI", _DOI),

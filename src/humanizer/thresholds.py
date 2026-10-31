@@ -315,5 +315,10 @@ def detect_counted_patterns(
         total_words = len(re.findall(r"\b[\w'-]+\b", text))
         with contextlib.suppress(Exception):
             findings.extend(tier_vocabulary_overuse(text, tier2, tier3, total_words))
+    # A phrase inside a quotation or a code span does not count towards
+    # a vocabulary-density threshold either.
+    from .guards import filter_findings
+
+    findings = filter_findings(findings, text)
     findings.sort(key=lambda f: (-f.weight, f.line))
     return findings
