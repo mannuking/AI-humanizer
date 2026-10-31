@@ -87,10 +87,25 @@ class MiniMaxClient:
             # max_tokens is deprecated on the OpenAI-compatible endpoint;
             # max_completion_tokens is the current name.
             "max_completion_tokens": max_tokens,
-            "temperature": temperature,
+            "temperature": self.config.temperature,
             "top_p": self.config.top_p,
-            # reasoning_split keeps the model's internal reasoning in a
-            # separate field instead of inline in the content.
+            # MiniMax-M3 is a reasoning model. Left enabled, it spends
+            # most of its token budget thinking before it writes: a
+            # 150-word rewrite used 2233 reasoning tokens, and on a long
+            # chunk it exhausted the whole 8192-token budget and never
+            # produced an answer at all.
+            #
+            # Disabling thinking is the right call for this workload.
+            # The task is rewriting prose against a list of specific
+            # tells, not solving a problem that needs deliberation - and
+            # the reasoning was not improving the output, it was
+            # describing the task back at length and occasionally
+            # replacing the answer entirely.
+            #
+            # reasoning_split is kept on so that if thinking is ever
+            # re-enabled, the reasoning lands in its own field and is
+            # never mistaken for the answer.
+            "thinking": {"type": "disabled"},
             "reasoning_split": True,
             "messages": [
                 {"role": "system", "content": system},

@@ -65,7 +65,11 @@ class Config:
     # --- Rewrite behaviour ---------------------------------------------
     temperature: float = field(default_factory=lambda: _env_float("HUMANIZER_TEMPERATURE", 0.85))
     top_p: float = field(default_factory=lambda: _env_float("HUMANIZER_TOP_P", 0.95))
-    max_tokens: int = field(default_factory=lambda: _env_int("HUMANIZER_MAX_TOKENS", 8192))
+    # A long chunk needs headroom. With thinking disabled the model
+    # answers in a few hundred tokens, but a 2000-word chunk of dense
+    # academic prose still needs room, and a truncated answer is worse
+    # than no answer.
+    max_tokens: int = field(default_factory=lambda: _env_int("HUMANIZER_MAX_TOKENS", 16384))
     max_passes: int = field(default_factory=lambda: _env_int("HUMANIZER_MAX_PASSES", 3))
     chunk_chars: int = field(default_factory=lambda: _env_int("HUMANIZER_CHUNK_CHARS", 6000))
     target_score: float = field(default_factory=lambda: _env_float("HUMANIZER_TARGET_SCORE", 0.25))

@@ -369,9 +369,19 @@ class TestReasoningGuard:
         # accepted. The pipeline raises, and the caller keeps the
         # original chunk.
         cfg = load_config()
-        pipe = Humanizer(_ScriptedClient("P16, P12 in same order.\nNo missing.\nCheck all placeholders."), cfg)
+        # The scratchpad the model actually produced: long enough to be
+        # classified, and carrying the markers that identify it.
+        scratchpad = (
+            "References exact. We might format titles as given.\n"
+            "Check all placeholders:\n"
+            "P16, P12, P13, P17 in same order.\n"
+            "P22 then P14. Refs P6 P23 P0 etc exact.\n"
+            "No missing."
+        )
+        pipe = Humanizer(_ScriptedClient(scratchpad), cfg)
         result = pipe.rewrite("Some prose that should survive unchanged.")
         assert "Some prose that should survive unchanged." in result.final_text
+        assert "Check all placeholders" not in result.final_text
 
     def test_ordinary_prose_is_not_flagged(self):
         text = (
