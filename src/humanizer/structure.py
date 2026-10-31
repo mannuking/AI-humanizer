@@ -93,6 +93,19 @@ class Block:
 _LIST_ITEM = re.compile(r"^(\s*)(?:([-*•])|(\d+[.)])|([a-z][.)]))(\s+)(.*)$")
 _HEADING = re.compile(r"^(#{1,6}\s+.*|\*\*[^*]+\*\*\s*:?|\d+\.\s+[A-Z][^\n:]{2,50}:)\s*$")
 
+#: A bibliography section. Everything after this heading is a list of
+#: citations, not prose. Rewriting a citation changes the reference -
+#: the author list, the year, the journal name and the DOI are the
+#: reference, and altering any of them falsifies the attribution.
+#:
+#: The heading itself may be markdown, bold, numbered or plain.
+_REFERENCES_HEADING = re.compile(
+    r"^\s*(?:#{1,6}\s*|\*\*|__)?"
+    r"(references|bibliography|works\s+cited|literature\s+cited|reference\s+list)"
+    r"(?:\*\*|__)?\s*:?\s*$",
+    re.IGNORECASE,
+)
+
 
 def split_blocks(text: str) -> list[Block]:
     """Split text into blocks that must each be rewritten on their own.
@@ -106,12 +119,14 @@ def split_blocks(text: str) -> list[Block]:
     buffer: list[str] = []
     in_fence = False
     fence_marker = ""
+    in_references = False
 
     def flush() -> None:
         if buffer:
             body = "\n".join(buffer).strip("\n")
             if body.strip():
-                blocks.append(Block(kind="paragraph", prefix="", body=body))
+                kind = "reference" if in_references else "paragraph"
+                blocks.append(Block(kind=kind, prefix="", body=body))
             buffer.clear()
 
     for line in lines:
@@ -139,13 +154,22 @@ def split_blocks(text: str) -> list[Block]:
             flush()
             continue
 
+        # A bibliography section starts here. Everything after it is a
+        # citation list and must not be rewritten.
+        if _REFERENCES_HEADING.match(line):
+            flush()
+            in_references = True
+            blocks.append(Block(kind="heading", prefix="", body=line.strip()))
+            continue
+
         m = _LIST_ITEM.match(line)
         if m:
             flush()
             indent, bullet, number, alpha, space, body = m.groups()
             marker = bullet or number or alpha
+            kind = "reference" if in_references else "list"
             blocks.append(
-                Block(kind="list", prefix=f"{indent}{marker}{space}", body=body)
+                Block(kind=kind, prefix=f"{indent}{marker}{space}", body=body)
             )
             continue
 
@@ -164,7 +188,7 @@ def join_blocks(blocks: list[Block]) -> str:
     """Reassemble blocks into text, preserving blank-line separation."""
     parts: list[str] = []
     for block in blocks:
-        if block.kind == "list":
+        if block.kind in ("list", "reference"):
             parts.append(block.text)
         else:
             parts.append(block.body)

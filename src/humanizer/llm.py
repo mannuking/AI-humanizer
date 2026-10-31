@@ -155,12 +155,15 @@ class MiniMaxClient:
                         part.get("text", "") for part in text if isinstance(part, dict)
                     )
                 )
-            # With reasoning_split enabled the model may put the answer in
-            # a separate field and leave content empty.
-            for key in ("reasoning_content", "reasoning"):
-                value = message.get(key)
-                if isinstance(value, str) and value.strip():
-                    return cls._strip_thinking(value)
+            # NOTE: with reasoning_split enabled, ``reasoning_content`` holds
+            # the model's INTERNAL REASONING, never the answer. Returning it
+            # here put the model's scratchpad into the user's document - the
+            # rewritten output was the model's own reasoning about the task.
+            # An empty content field means the model did not produce an
+            # answer; the caller retries. Never substitute reasoning.
+            #
+            # A response whose content is empty but whose reasoning is
+            # present is a failure, not an answer.
 
         # Some MiniMax responses use a flat "reply" field.
         for key in ("reply", "output", "text"):

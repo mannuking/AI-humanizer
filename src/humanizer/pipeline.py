@@ -33,6 +33,7 @@ from .config import Config
 from .preservation import extract, strip_placeholders
 from .profiles import Profile, get_profile
 from .prompts import build_review_prompt, build_rewrite_prompt
+from .reasoning_guard import looks_like_reasoning
 from .structure import (
     Block,
     join_blocks,
@@ -145,13 +146,24 @@ class Humanizer:
         return "\n".join(lines)
 
     def _chunk_blocks(self, blocks: list[Block]) -> list[list[Block]]:
-        """Group blocks into chunks under the configured character budget."""
+        """Group blocks into chunks under the configured character budget.
+
+        A reference block is never merged with prose: the bibliography
+        travels as its own chunk and is passed through verbatim.
+        """
         limit = self.config.chunk_chars
         chunks: list[list[Block]] = []
         current: list[Block] = []
         size = 0
         for block in blocks:
             block_size = len(block.text)
+            if block.kind == "reference":
+                if current:
+                    chunks.append(current)
+                    current = []
+                    size = 0
+                chunks.append([block])
+                continue
             if current and size + block_size > limit:
                 chunks.append(current)
                 current = []
@@ -178,6 +190,11 @@ class Humanizer:
         restored afterwards, then checked - the incumbent tools lose
         between 6% and 35% of numeric tokens, and this is how we do not.
         """
+        # A bibliography is not prose. Rewriting a citation changes the
+        # reference itself, so it passes through untouched.
+        if all(block.kind == "reference" for block in chunk):
+            return join_blocks(chunk), []
+
         source = join_blocks(chunk)
         protected = extract(source)
         summary = findings_summary
@@ -192,6 +209,10 @@ class Humanizer:
             tone_instructions=tone_instructions,
         )
         raw = self.client.chat(user, system=system)
+        if looks_like_reasoning(raw):
+            raise RuntimeError(
+                "model returned internal reasoning instead of an answer"
+            )
         restored = protected.restore(raw)
         # Any placeholder the model mangled or dropped leaves a stub.
         restored = strip_placeholders(restored)

@@ -17,15 +17,30 @@ from humanizer import (
     guards,
     preservation,
     profiles,
+    reasoning_guard,
     structure,
     tokens,
     unicode_artifacts,
 )
 from humanizer.analyze import analyze as analyze_text
+from humanizer.config import load_config
 from humanizer.llm import EchoBackend, MiniMaxClient, MiniMaxError
 from humanizer.pipeline import Humanizer
 from humanizer.prompts import build_review_prompt, build_rewrite_prompt
 from humanizer.structure import word_count
+
+
+class _ScriptedClient:
+    """A stub client that returns a fixed answer for every chunk."""
+
+    def __init__(self, answer: str) -> None:
+        self.answer = answer
+        self.calls: list[str] = []
+
+    def chat(self, user: str, system: str = "") -> str:
+        self.calls.append(user)
+        return self.answer
+
 
 # ----------------------------------------------------------------------
 # fixtures
@@ -331,6 +346,102 @@ class TestGuardrails:
     def test_empty_text_is_safe(self):
         assert guards.guarded_regions("") == []
         assert guards.filter_findings([], "") == []
+
+
+# ----------------------------------------------------------------------
+# reasoning guard, references, and the response-extraction fix
+# ----------------------------------------------------------------------
+
+
+class TestReasoningGuard:
+    def test_scratchpad_is_detected(self):
+        text = (
+            "Check all placeholders:\n"
+            "P16, P12, P13, P17 in same order.\n"
+            "P22 then P14.\n"
+            "Refs P6 P23 P0 etc exact.\n"
+            "No missing."
+        )
+        assert reasoning_guard.looks_like_reasoning(text)
+
+    def test_the_pipeline_rejects_reasoning(self):
+        # A rewrite whose answer is the model's scratchpad must not be
+        # accepted. The pipeline raises, and the caller keeps the
+        # original chunk.
+        cfg = load_config()
+        pipe = Humanizer(_ScriptedClient("P16, P12 in same order.\nNo missing.\nCheck all placeholders."), cfg)
+        result = pipe.rewrite("Some prose that should survive unchanged.")
+        assert "Some prose that should survive unchanged." in result.final_text
+
+    def test_ordinary_prose_is_not_flagged(self):
+        text = (
+            "The migration completed on 14 March, three weeks later than planned.\n"
+            "Downtime was 40 minutes, within the agreed window.\n"
+            "Two issues surfaced and both are now closed."
+        )
+        assert not reasoning_guard.looks_like_reasoning(text)
+
+    def test_prose_containing_the_word_placeholder_is_not_flagged(self):
+        text = (
+            "A placeholder value stands in for the missing data until it arrives.\n"
+            "The parser handles it gracefully.\n"
+            "Nothing else changes."
+        )
+        assert not reasoning_guard.looks_like_reasoning(text)
+
+    def test_a_short_answer_is_never_flagged(self):
+        assert not reasoning_guard.looks_like_reasoning("P16 was kept.")
+
+    def test_empty_text_is_not_flagged(self):
+        assert not reasoning_guard.looks_like_reasoning("")
+
+
+class TestReferencesAreNotRewritten:
+    def test_a_references_section_becomes_reference_blocks(self):
+        text = (
+            "Some prose here.\n\n"
+            "References\n\n"
+            "Teichmann, F. M. (2026). A title. Law, Innovation and Technology.\n"
+            "https://doi.org/10.1080/17579961.2026.2718578\n\n"
+            "Qi, J. (2026). Another title. Academia AI.\n"
+            "https://doi.org/10.20935/AcadAI8260"
+        )
+        kinds = [b.kind for b in structure.split_blocks(text)]
+        assert "reference" in kinds
+        assert "heading" in kinds
+
+    def test_the_prose_before_the_references_is_still_a_paragraph(self):
+        text = "Some prose here.\n\nReferences\n\nA citation."
+        kinds = [b.kind for b in structure.split_blocks(text)]
+        assert kinds[0] == "paragraph"
+
+    def test_a_reference_chunk_passes_through_untouched(self):
+        cfg = load_config()
+        pipe = Humanizer(_ScriptedClient("THIS SHOULD NEVER BE USED"), cfg)
+        text = (
+            "Prose paragraph that needs work.\n\n"
+            "References\n\n"
+            "Teichmann, F. M. (2026). A title. https://doi.org/10.1080/17579961.2026.2718578"
+        )
+        result = pipe.rewrite(text)
+        assert "https://doi.org/10.1080/17579961.2026.2718578" in result.final_text
+        assert "Teichmann, F. M. (2026). A title." in result.final_text
+
+    def test_the_client_never_returns_the_reasoning_field(self):
+        # A response whose content is empty and whose reasoning_content
+        # holds the scratchpad must not yield the scratchpad.
+        payload = {
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "role": "assistant",
+                        "reasoning_content": "We need to rewrite this. P16 etc.",
+                    }
+                }
+            ]
+        }
+        assert MiniMaxClient._extract_text(payload) == ""
 
 
 # ----------------------------------------------------------------------
