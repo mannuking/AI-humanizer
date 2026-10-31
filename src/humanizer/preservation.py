@@ -17,20 +17,23 @@ import re
 from dataclasses import dataclass, field
 
 #: A number with a unit, a percentage, a currency amount, or a measurement.
+#: A number ends on a digit, and the thousands separator may only appear
+#: BETWEEN digits. Writing ``[\d,]*`` lets the comma of a following clause
+#: be swallowed ("22," instead of "22"), and a lookahead of ``(?!\w)``
+#: makes the engine backtrack off a decimal ("$12" instead of "$12.40").
 _NUMBER = re.compile(
     r"""
     (?<![\w.])
     (?:
-        (?:[$€£¥₹]\s?\d[\d,]*(?:\.\d+)?)          # currency
-      | (?:\d[\d,]*(?:\.\d+)?\s?%)                # percentage
-      | (?:\d[\d,]*(?:\.\d+)?\s?°[CF]?)            # degrees
-      | (?:\d[\d,]*(?:\.\d+)?\s?(?:kg|g|mg|km|cm|mm|m|ml|l|kb|mb|gb|tb|hz|khz|mhz|ghz|w|kw|v|mv|ms|s|min|h|hrs|years?|months?|days?|weeks?)\b)  # unit
-      | (?:[$€£¥₹]\s?\d[\d,]*(?:\.\d+)?\s?(?:million|billion|trillion|k|m|bn))  # big money
-      | (?:\d[\d,]*(?:\.\d+)?)                     # bare number
+        (?:[$€£¥₹]\s?\d(?:[\d,]*\d)?(?:\.\d+)?)              # currency
+      | (?:\d(?:[\d,]*\d)?(?:\.\d+)?\s?%)                     # percentage
+      | (?:\d(?:[\d,]*\d)?(?:\.\d+)?\s?°[CF]?)                 # degrees
+      | (?:\d(?:[\d,]*\d)?(?:\.\d+)?(?:kg|g|mg|km|cm|mm|m|ml|l|kb|mb|gb|tb|hz|khz|mhz|ghz|w|kw|v|mv|ms|s|min|h|hrs|years?|months?|days?|weeks?)\b)
+      | (?:[$€£¥₹]\s?\d(?:[\d,]*\d)?(?:\.\d+)?(?:million|billion|trillion|k|bn|m))
+      | (?:\d(?:[\d,]*\d)?(?:\.\d+)?)                          # bare number
     )
-    (?![\w,])                                      # a trailing "." ends a
-    """,                                           # sentence, it is not a
-                                                    # digit, so allow it
+    (?!\d)(?!\.\d)
+    """,
     re.IGNORECASE | re.VERBOSE,
 )
 
@@ -56,7 +59,12 @@ _IDENTIFIER = re.compile(
 
 #: Emails and URLs.
 _EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
-_URL = re.compile(r"\b(?:https?://|www\.)[^\s)\]<>\"']+", re.IGNORECASE)
+#: The trailing character class excludes sentence punctuation, so a URL
+#: at the end of a sentence does not swallow the full stop.
+_URL = re.compile(
+    r"\b(?:https?://|www\.)[^\s)\]<>\"'`]*[A-Za-z0-9/#?=_-]",
+    re.IGNORECASE,
+)
 _DOI = re.compile(r"\b10\.\d{4,9}/[-._;()/:\w]+", re.IGNORECASE)
 
 #: Bracketed numeric citations and author-year citations.
@@ -73,13 +81,24 @@ _SPAN_PATTERNS = (
     ("EMAIL", _EMAIL),
     ("DOI", _DOI),
     ("CODE", re.compile(r"```.*?```|~~~.*?~~~|`[^`\n]+`", re.DOTALL)),
-    ("MATH", re.compile(r"\$\$.*?\$\$|\\\[[^\]]*\\\]|\\\([^)]*\\\)|\$[^$\n]+\$", re.DOTALL)),
+    ("MATH", re.compile(
+        r"\$\$.*?\$\$"
+        r"|\\\[[^\]]*\\\]"
+        r"|\\\([^)]*\\\)"
+        # Inline maths: a single $ pair, but not when a "$" is followed by a
+        # digit - that is a price ("$12.40 ... $50.00"), not a formula.
+        r"|(?<!\$)\$(?!\$|\s|\d)[^$\n]{1,200}?(?<!\d)\$(?!\$)",
+        re.DOTALL,
+    )),
     ("TABLE", re.compile(r"(?:^\|.*\|[ \t]*$\n?)+", re.MULTILINE)),
     ("CITATION", _CITATION),
     ("DATE", _DATE),
-    ("IDENTIFIER", _IDENTIFIER),
     ("EMPHASIS", _EMPHASIS),
+    # NUMBER before IDENTIFIER: the identifier pattern matches a bare
+    # "12.40" and would leave the "$" outside the protected span, where
+    # the rewrite could separate it from the amount.
     ("NUMBER", _NUMBER),
+    ("IDENTIFIER", _IDENTIFIER),
 )
 
 

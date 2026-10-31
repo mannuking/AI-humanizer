@@ -13,6 +13,7 @@ text. Everything else - chunking, retries across passes, scoring - lives in
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
@@ -95,8 +96,23 @@ class MiniMaxClient:
     # ------------------------------------------------------------------
     # response parsing
     # ------------------------------------------------------------------
-    @staticmethod
-    def _extract_text(payload: dict[str, Any]) -> str:
+    #: MiniMax's reasoning models wrap their answer in <think>...</think>.
+    #: Those blocks are internal reasoning and must not reach the output.
+    _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+    _THINK_OPEN = re.compile(r"^\s*<think>.*", re.DOTALL | re.IGNORECASE)
+
+    @classmethod
+    def _strip_thinking(cls, text: str) -> str:
+        """Remove the model's reasoning blocks from its answer."""
+        if not text:
+            return text
+        cleaned = cls._THINK_BLOCK.sub("", text)
+        # An unterminated block runs to the end of the reply.
+        cleaned = cls._THINK_OPEN.sub("", cleaned)
+        return cleaned.strip()
+
+    @classmethod
+    def _extract_text(cls, payload: dict[str, Any]) -> str:
         """Pull the assistant text out of either response shape."""
         # Anthropic shape
         content = payload.get("content")
@@ -107,7 +123,7 @@ class MiniMaxClient:
                 if isinstance(block, dict) and block.get("type") == "text"
             ]
             if parts:
-                return "".join(parts).strip()
+                return cls._strip_thinking("".join(parts))
             # Some responses return a thinking block plus a text block.
             for block in content:
                 if isinstance(block, dict) and block.get("type") == "thinking":
@@ -119,7 +135,7 @@ class MiniMaxClient:
                 if isinstance(block, dict) and block.get("text")
             ]
             if strings:
-                return "".join(strings).strip()
+                return cls._strip_thinking("".join(strings))
 
         # OpenAI shape
         choices = payload.get("choices")
@@ -127,17 +143,19 @@ class MiniMaxClient:
             message = choices[0].get("message", {})
             text = message.get("content")
             if isinstance(text, str):
-                return text.strip()
+                return cls._strip_thinking(text)
             if isinstance(text, list):
-                return "".join(
-                    part.get("text", "") for part in text if isinstance(part, dict)
-                ).strip()
+                return cls._strip_thinking(
+                    "".join(
+                        part.get("text", "") for part in text if isinstance(part, dict)
+                    )
+                )
 
         # Some MiniMax responses use a flat "reply" field.
         for key in ("reply", "output", "text"):
             value = payload.get(key)
             if isinstance(value, str) and value.strip():
-                return value.strip()
+                return cls._strip_thinking(value)
 
         return ""
 

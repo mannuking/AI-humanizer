@@ -237,6 +237,43 @@ class TestPreservation:
         lost = preservation.verify("The answer is 42.", "The answer is unknown.")
         assert "42" in lost
 
+    def test_a_number_at_the_end_of_a_sentence_is_protected(self):
+        protected = preservation.extract("The answer is 42.")
+        assert "42" in protected.originals
+
+    def test_a_decimal_is_not_truncated(self):
+        protected = preservation.extract("It cost $12.40 in total.")
+        assert "$12.40" in protected.originals
+
+    def test_two_currency_amounts_do_not_merge(self):
+        text = "It cost $12.40, well below the $50.00 benchmark."
+        protected = preservation.extract(text)
+        assert "$12.40" in protected.originals
+        assert "$50.00" in protected.originals
+        # The text between them must not be swallowed.
+        assert "well below" in protected.text
+
+    def test_a_url_does_not_swallow_the_full_stop(self):
+        protected = preservation.extract("See https://example.org/x for more.")
+        assert "https://example.org/x" in protected.originals
+        assert not any(u.endswith(".") for u in protected.originals)
+
+    def test_inline_math_is_protected(self):
+        protected = preservation.extract("The value $x^2 + y$ is computed.")
+        assert "$x^2 + y$" in protected.originals
+
+    def test_a_citation_year_is_protected(self):
+        protected = preservation.extract("As shown (Smith, 2023) the effect holds.")
+        assert any("2023" in s for s in protected.originals)
+
+    def test_every_protected_span_round_trips(self):
+        text = (
+            "The rate was 45% across 200 sites between 2024-01-02 and 2025-03-04, "
+            "see [3] and https://x.io, costing $12.40 in total."
+        )
+        protected = preservation.extract(text)
+        assert protected.restore(protected.text) == text
+
     def test_placeholders_are_opaque(self):
         protected = preservation.extract("A 100 kg payload.")
         assert "\u27e6P" in protected.text
