@@ -53,6 +53,17 @@ def _print_report(text: str, verbose: bool = True) -> None:
         f"threshold {len(report.counted_findings)}   "
         f"document {len(report.document_findings)}"
     )
+    tp = report.token_profile
+    print(
+        f"  Tokens  {tp.token_count}   "
+        f"generic share {tp.generic_token_share:.3f}   "
+        f"hapax {tp.hapax_token_ratio:.3f}   "
+        f"chars/token {tp.chars_per_token:.2f}"
+    )
+    if report.artifacts.found:
+        print(f"  Typographic artifacts ({len(report.artifacts.found)} kinds):")
+        for name, count in report.artifacts.found.items():
+            print(f"    {name}: {count}")
     counted = report.counted_findings
     docs = report.document_findings
     total = len(report.findings) + len(counted) + len(docs)

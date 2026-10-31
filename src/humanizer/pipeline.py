@@ -40,6 +40,8 @@ from .structure import (
     split_blocks,
     word_count,
 )
+from .tokens import predictable_sentences
+from .unicode_artifacts import normalize as normalize_artifacts
 
 
 @dataclass
@@ -121,6 +123,27 @@ class Humanizer:
             lines.append(f'- {f.detector}: "{f.match}" ({f.suggestion})')
         return "\n".join(lines)
 
+    def _predictability_hint(self, text: str, top: int = 3) -> str:
+        """Name the most predictable sentences, for the prompt.
+
+        The commercial detectors measure how often the next most probable
+        word is used. A sentence assembled entirely from common tokens is
+        the sentence that reads as machine-written even when every word
+        is individually ordinary, so those are the sentences worth
+        rewriting first.
+        """
+        spans = predictable_sentences(text, top=top)
+        if not spans:
+            return ""
+        lines = [
+            "These sentences use only the most common vocabulary, which is "
+            "the single strongest machine-writing signal. Rewrite them to "
+            "use specific words:",
+        ]
+        for span in spans:
+            lines.append(f'- "{span.text[:140]}"')
+        return "\n".join(lines)
+
     def _chunk_blocks(self, blocks: list[Block]) -> list[list[Block]]:
         """Group blocks into chunks under the configured character budget."""
         limit = self.config.chunk_chars
@@ -157,10 +180,14 @@ class Humanizer:
         """
         source = join_blocks(chunk)
         protected = extract(source)
+        summary = findings_summary
+        hint = self._predictability_hint(source)
+        if hint:
+            summary = f"{summary}\n\n{hint}".strip()
         system, user = build_rewrite_prompt(
             protected.text,
             profile,
-            findings_summary=findings_summary,
+            findings_summary=summary,
             target_words=target_words,
             tone_instructions=tone_instructions,
         )
@@ -169,6 +196,12 @@ class Humanizer:
         # Any placeholder the model mangled or dropped leaves a stub.
         restored = strip_placeholders(restored)
         restored = restore_list_markers(source, restored)
+        # Typographic artifacts - em dashes, curly quotes, non-standard
+        # spaces - are a cheap signal for a detector and they break
+        # copy-paste into a CMS or a database. Normalise them to plain
+        # ASCII, which is what a person typing would produce.
+        artifacts = normalize_artifacts(restored, smart_punctuation=False)
+        restored = artifacts.text
         return restored.strip(), protected.missing(restored)
 
     def _verify_meaning(self, original: str, rewritten: str) -> tuple[bool, str]:
@@ -224,6 +257,14 @@ class Humanizer:
 
         self._log(f"Analysed input: score {original_report.overall_score:.3f} "
                   f"({original_report.band}), {len(original_report.findings)} findings")
+
+        # Clean the input before anything else: typographic artifacts in
+        # the source would otherwise survive into the result.
+        incoming = normalize_artifacts(text, smart_punctuation=False)
+        if incoming.changed:
+            self._log(f"  normalised {incoming.changed} typographic character(s)")
+            text = incoming.text
+            original_report = analyze(text)
 
         current_text = text
         current_report = original_report

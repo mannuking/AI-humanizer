@@ -25,6 +25,10 @@ from . import data
 from .document import DocumentFinding, detect_document_patterns
 from .guards import filter_findings
 from .thresholds import CountFinding, detect_counted_patterns
+from .tokens import TokenProfile
+from .tokens import profile as token_profile
+from .unicode_artifacts import ArtifactReport, artifact_score
+from .unicode_artifacts import scan as scan_artifacts
 
 # --------------------------------------------------------------------------
 # lexical layer
@@ -408,6 +412,11 @@ class Report:
     document_findings: list[DocumentFinding] = field(default_factory=list)
     #: Findings from the threshold-based detectors.
     counted_findings: list[CountFinding] = field(default_factory=list)
+    #: The token-level shape of the passage - the signal the commercial
+    #: detectors actually use.
+    token_profile: TokenProfile = field(default_factory=TokenProfile)
+    #: Typographic artifacts found in the text.
+    artifacts: ArtifactReport = field(default_factory=ArtifactReport)
     stats: Stats = field(default_factory=Stats)
     pattern_score: float = 0.0
     style_score: float = 0.0
@@ -423,6 +432,8 @@ class Report:
             "stats": self.stats.as_dict(),
             "findings": [f.as_dict() for f in self.findings],
             "finding_count": len(self.findings),
+            "token_profile": self.token_profile.as_dict(),
+            "artifacts": self.artifacts.as_dict(),
             "counted_findings": [
                 {
                     "detector": f.detector,
@@ -488,7 +499,11 @@ def _pattern_score(
     return round(min(1.0, per_100 / 40.0), 4)
 
 
-def _style_score(stats: Stats) -> float:
+def _style_score(
+    stats: Stats,
+    tokens: TokenProfile | None = None,
+    artifacts_score: float = 0.0,
+) -> float:
     """How uniform is the prose?
 
     Each component scores 0 (human-like) to 1 (uniform, machine-like).
@@ -538,8 +553,15 @@ def _style_score(stats: Stats) -> float:
     else:
         struct = 0.0
 
-    components = [burst, ttr, hapax, punct, em, struct]
-    weights = [0.30, 0.20, 0.15, 0.15, 0.10, 0.10]
+    # Token-level predictability. The commercial detectors measure how
+    # often the next most probable word is used, and a model reaches for
+    # the head of the vocabulary far more often than a person does.
+    generic = 0.0
+    if tokens is not None and tokens.token_count:
+        generic = min(1.0, max(0.0, (tokens.generic_token_share - 0.20) / 0.25))
+
+    components = [burst, ttr, hapax, punct, em, struct, generic, artifacts_score]
+    weights = [0.30, 0.20, 0.15, 0.15, 0.10, 0.10, 0.15, 0.05]
     return round(sum(c * w for c, w in zip(components, weights, strict=True)), 4)
 
 
@@ -565,11 +587,13 @@ def analyze(text: str) -> Report:
     findings = filter_findings(detect_patterns(text), text)
     doc_findings = detect_document_patterns(text)
     counted = detect_counted_patterns(text, data.TIER_2, data.TIER_3)
+    tokens = token_profile(text)
+    artifacts = scan_artifacts(text)
     stats = compute_stats(text)
     pattern_score = _pattern_score(
         findings, stats.word_count, doc_findings, counted
     )
-    style_score = _style_score(stats)
+    style_score = _style_score(stats, tokens, artifact_score(text))
     # The lexical layer dominates: a text that says "delve into the
     # intricate tapestry" reads as AI regardless of its sentence rhythm.
     overall = round(0.65 * pattern_score + 0.35 * style_score, 4)
@@ -578,6 +602,8 @@ def analyze(text: str) -> Report:
         findings=findings,
         document_findings=doc_findings,
         counted_findings=counted,
+        token_profile=tokens,
+        artifacts=artifacts,
         stats=stats,
         pattern_score=pattern_score,
         style_score=style_score,

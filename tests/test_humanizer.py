@@ -11,7 +11,16 @@ import re
 
 import pytest
 
-from humanizer import data, document, guards, preservation, profiles, structure
+from humanizer import (
+    data,
+    document,
+    guards,
+    preservation,
+    profiles,
+    structure,
+    tokens,
+    unicode_artifacts,
+)
 from humanizer.analyze import analyze as analyze_text
 from humanizer.llm import EchoBackend, MiniMaxClient, MiniMaxError
 from humanizer.pipeline import Humanizer
@@ -322,6 +331,93 @@ class TestGuardrails:
     def test_empty_text_is_safe(self):
         assert guards.guarded_regions("") == []
         assert guards.filter_findings([], "") == []
+
+
+# ----------------------------------------------------------------------
+# token-level fingerprint and Unicode artifacts
+# ----------------------------------------------------------------------
+
+
+class TestTokenProfile:
+    def test_ai_text_has_a_higher_generic_share(self):
+        ai = analyze_text(AI_TEXT)
+        human = analyze_text(HUMAN_TEXT)
+        assert ai.token_profile.generic_token_share > human.token_profile.generic_token_share
+
+    def test_the_profile_is_populated(self):
+        r = analyze_text(HUMAN_TEXT)
+        assert r.token_profile.token_count > 0
+        assert r.token_profile.chars_per_token > 0
+
+    def test_empty_text_gives_a_zero_profile(self):
+        r = analyze_text("")
+        assert r.token_profile.token_count == 0
+
+    def test_predictable_sentences_are_ordered(self):
+        spans = tokens.predictable_sentences(AI_TEXT, top=3)
+        assert spans
+        scores = [s.score for s in spans]
+        assert scores == sorted(scores, reverse=True)
+
+    def test_predictable_sentences_skips_fragments(self):
+        spans = tokens.predictable_sentences("Hi. Ok. Yes.", top=3)
+        assert not spans
+
+    def test_the_profile_appears_in_the_report(self):
+        r = analyze_text(HUMAN_TEXT)
+        d = r.as_dict()
+        assert "token_profile" in d
+        assert "artifacts" in d
+
+
+class TestUnicodeArtifacts:
+    def test_a_non_standard_space_is_found(self):
+        report = unicode_artifacts.scan("a\u00a0b")
+        assert any("NO-BREAK" in k for k in report.found)
+
+    def test_zero_width_characters_are_found(self):
+        report = unicode_artifacts.scan("a\u200bb")
+        assert any("ZERO WIDTH" in k for k in report.found)
+
+    def test_normalising_replaces_the_space(self):
+        out = unicode_artifacts.normalize("a\u00a0b")
+        assert out.text == "a b"
+
+    def test_normalising_removes_zero_width_characters(self):
+        out = unicode_artifacts.normalize("a\u200bb")
+        assert out.text == "ab"
+
+    def test_normalising_converts_smart_quotes(self):
+        out = unicode_artifacts.normalize("he said \u201chi\u201d")
+        assert out.text == 'he said "hi"'
+
+    def test_smart_punctuation_can_be_left_alone(self):
+        out = unicode_artifacts.normalize("he said \u201chi\u201d", smart_punctuation=False)
+        assert "\u201c" in out.text
+
+    def test_every_space_after_normalising_is_plain(self):
+        text = "a\u00a0b\u2003c\u2009d \u2014 e"
+        out = unicode_artifacts.normalize(text)
+        assert all(ch == " " for ch in out.text if ch.isspace())
+
+    def test_clean_text_is_unchanged(self):
+        text = "Plain ascii text with nothing odd about it."
+        out = unicode_artifacts.normalize(text)
+        assert out.text == text
+        assert out.changed == 0
+
+    def test_the_artifact_score_is_zero_for_clean_text(self):
+        assert unicode_artifacts.artifact_score("plain text") == 0.0
+
+    def test_homoglyphs_are_detected(self):
+        # A Cyrillic "a" mixed into a Latin word.
+        assert unicode_artifacts.find_homoglyphs("caf\u0430")
+        assert not unicode_artifacts.find_homoglyphs("cafe")
+
+    def test_the_report_carries_the_artifacts(self):
+        r = analyze_text("a\u00a0b")
+        assert r.artifacts.found
+        assert not r.artifacts.clean
 
 
 # ----------------------------------------------------------------------

@@ -68,6 +68,23 @@ def render_analysis(report, container=None) -> None:
     )
     col_c.metric("Words", stats.word_count)
 
+    if report.artifacts.found:
+        with target.expander(
+            f"Typographic artifacts ({sum(report.artifacts.found.values())})", expanded=False
+        ):
+            st.warning(
+                "This text carries typographic characters that a person typing "
+                "plain text would not produce. The rewrite normalises them."
+            )
+            st.dataframe(
+                [
+                    {"character": name, "count": count}
+                    for name, count in report.artifacts.found.items()
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+
     with target.expander("Breakdown", expanded=False):
         score_bar(report.pattern_score, "Pattern density")
         score_bar(report.style_score, "Style uniformity")
