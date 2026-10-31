@@ -18,7 +18,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .analyze import analyze
+from humanizer import perplexity as px
+from humanizer.analyze import analyze
+
 from .config import load_config
 from .llm import MiniMaxError, build_client
 from .pipeline import Humanizer
@@ -29,13 +31,57 @@ WEB_APP = PACKAGE_ROOT / "web" / "app.py"
 
 
 def _read_input(path: str | None) -> str:
+    """Read the input, whatever it is.
+
+    Word documents are read paragraph by paragraph so that the
+    structure - headings, lists, the bibliography - survives.
+    """
     if path in (None, "-"):
         return sys.stdin.read()
-    return Path(path).read_text(encoding="utf-8")
+    target = Path(path)
+    if target.suffix.lower() == ".docx":
+        from . import docx_io
+
+        return docx_io.read(target).to_text()
+    if target.suffix.lower() == ".doc":
+        raise ValueError(
+            f"{target.name} is a legacy .doc file. Convert it first:\n"
+            f"  soffice --headless --convert-to docx {target.name}"
+        )
+    return target.read_text(encoding="utf-8")
+
+
+def _write_output(path: str | None, text: str, source: str | None) -> None:
+    """Write the result, keeping the input format.
+
+    Rewriting a .docx and saving it as .txt would throw away the
+    document. When the input was a Word file, the output is a Word file.
+    """
+    if not path:
+        print(text)
+        return
+    target = Path(path)
+    if target.suffix.lower() == ".docx":
+        from . import docx_io
+
+        if source:
+            document = docx_io.read(source)
+            document = docx_io.apply_text(document, text)
+            docx_io.write(document, target)
+        else:
+            document = docx_io.Document(paragraphs=docx_io.to_docx_paragraphs(text))
+            docx_io.write(document, target)
+        print(f"Wrote {target}")
+        return
+    target.write_text(text, encoding="utf-8")
+    print(f"Wrote {target}")
 
 
 def _print_report(text: str, verbose: bool = True) -> None:
-    report = analyze(text)
+    # Measure against a local model when one is available - that is the
+    # measurement the commercial detectors make, and it is what catches
+    # technical prose the phrase catalogue misses.
+    report = analyze(text, with_perplexity=px.available())
     stats = report.stats
     print(f"\n  Score   {report.overall_score:.3f}  ({report.band})")
     print(f"          pattern {report.pattern_score:.3f}   style {report.style_score:.3f}")
@@ -60,6 +106,17 @@ def _print_report(text: str, verbose: bool = True) -> None:
         f"hapax {tp.hapax_token_ratio:.3f}   "
         f"chars/token {tp.chars_per_token:.2f}"
     )
+    if report.perplexity is not None and not report.perplexity.unavailable:
+        burst = (
+            f"   burstiness {report.burstiness.cv:.3f}"
+            if report.burstiness
+            else ""
+        )
+        print(
+            f"  Model   perplexity {report.perplexity.perplexity:.2f}   "
+            f"nll {report.perplexity.mean_nll:.4f}   "
+            f"tokens {report.perplexity.token_count}{burst}"
+        )
     if report.artifacts.found:
         print(f"  Typographic artifacts ({len(report.artifacts.found)} kinds):")
         for name, count in report.artifacts.found.items():
@@ -125,8 +182,11 @@ def cmd_rewrite(args: argparse.Namespace) -> int:
     )
 
     if args.output:
-        Path(args.output).write_text(result.final_text, encoding="utf-8")
-        print(f"Wrote {args.output}")
+        try:
+            _write_output(args.output, result.final_text, args.file)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
     else:
         print(result.final_text)
 
