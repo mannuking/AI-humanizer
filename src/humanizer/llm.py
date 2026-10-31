@@ -1,0 +1,256 @@
+"""MiniMax client.
+
+MiniMax exposes an Anthropic-compatible API at ``https://api.minimax.io/anthropic/v1``
+and an OpenAI-compatible one at ``https://api.minimax.io/v1``. Both are
+supported; the Anthropic route is the default because MiniMax's own quickstart
+uses it and it accepts a top-level ``system`` prompt.
+
+The client is deliberately thin: it sends one chat request and returns the
+text. Everything else - chunking, retries across passes, scoring - lives in
+:mod:`humanizer.pipeline`.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from typing import Any
+
+import httpx
+
+from .config import Config
+
+
+class MiniMaxError(RuntimeError):
+    """Raised when the API returns an error we cannot recover from."""
+
+
+class MiniMaxClient:
+    """A minimal chat client for MiniMax.
+
+    Parameters
+    ----------
+    config:
+        The resolved configuration. ``config.api_key`` must be set.
+    """
+
+    def __init__(self, config: Config | None = None) -> None:
+        self.config = config or Config()
+        if not self.config.has_key:
+            raise MiniMaxError(self.config.missing_key_message())
+
+    # ------------------------------------------------------------------
+    # request building
+    # ------------------------------------------------------------------
+    def _endpoint(self) -> str:
+        base = self.config.base_url.rstrip("/")
+        if self.config.api_style == "anthropic":
+            if base.endswith("/anthropic/v1"):
+                return f"{base}/messages"
+            if base.endswith("/v1"):
+                return f"{base}/messages"
+            return f"{base}/anthropic/v1/messages"
+        if base.endswith("/anthropic/v1"):
+            return f"{base}/chat/completions"
+        if base.endswith("/v1"):
+            return f"{base}/chat/completions"
+        return f"{base}/v1/chat/completions"
+
+    def _headers(self) -> dict[str, str]:
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.config.api_key}",
+        }
+        if self.config.api_style == "anthropic":
+            headers["x-api-key"] = self.config.api_key
+            headers["anthropic-version"] = "2023-06-01"
+        return headers
+
+    def _payload(
+        self,
+        system: str,
+        user: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> dict[str, Any]:
+        if self.config.api_style == "anthropic":
+            return {
+                "model": self.config.model,
+                "max_tokens": max_tokens,
+                "system": system,
+                "temperature": temperature,
+                "messages": [{"role": "user", "content": user}],
+            }
+        return {
+            "model": self.config.model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": self.config.top_p,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }
+
+    # ------------------------------------------------------------------
+    # response parsing
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _extract_text(payload: dict[str, Any]) -> str:
+        """Pull the assistant text out of either response shape."""
+        # Anthropic shape
+        content = payload.get("content")
+        if isinstance(content, list):
+            parts = [
+                block.get("text", "")
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+            ]
+            if parts:
+                return "".join(parts).strip()
+            # Some responses return a thinking block plus a text block.
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "thinking":
+                    continue
+            # Fall back to any string content.
+            strings = [
+                block.get("text", "")
+                for block in content
+                if isinstance(block, dict) and block.get("text")
+            ]
+            if strings:
+                return "".join(strings).strip()
+
+        # OpenAI shape
+        choices = payload.get("choices")
+        if isinstance(choices, list) and choices:
+            message = choices[0].get("message", {})
+            text = message.get("content")
+            if isinstance(text, str):
+                return text.strip()
+            if isinstance(text, list):
+                return "".join(
+                    part.get("text", "") for part in text if isinstance(part, dict)
+                ).strip()
+
+        # Some MiniMax responses use a flat "reply" field.
+        for key in ("reply", "output", "text"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        return ""
+
+    # ------------------------------------------------------------------
+    # the call
+    # ------------------------------------------------------------------
+    def chat(
+        self,
+        user: str,
+        system: str = "",
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Send one chat request and return the assistant's text.
+
+        Retries on transient failures (429, 5xx, network errors) with an
+        exponential backoff, up to ``config.max_retries`` attempts.
+        """
+        temperature = self.config.temperature if temperature is None else temperature
+        max_tokens = self.config.max_tokens if max_tokens is None else max_tokens
+        url = self._endpoint()
+        payload = self._payload(system, user, temperature, max_tokens)
+
+        last_error: Exception | None = None
+        for attempt in range(self.config.max_retries):
+            try:
+                with httpx.Client(timeout=self.config.timeout) as client:
+                    response = client.post(url, headers=self._headers(), json=payload)
+                if response.status_code >= 400:
+                    body = response.text[:600]
+                    if response.status_code in (429, 500, 502, 503, 504):
+                        last_error = MiniMaxError(
+                            f"MiniMax returned {response.status_code}: {body}"
+                        )
+                        delay = 2**attempt
+                        time.sleep(delay)
+                        continue
+                    raise MiniMaxError(
+                        f"MiniMax returned {response.status_code}: {body}"
+                    )
+                data = response.json()
+                text = self._extract_text(data)
+                if not text:
+                    last_error = MiniMaxError(
+                        f"MiniMax returned no text: {json.dumps(data)[:600]}"
+                    )
+                    time.sleep(2**attempt)
+                    continue
+                return text
+            except httpx.HTTPError as exc:
+                last_error = exc
+                time.sleep(2**attempt)
+
+        raise MiniMaxError(f"MiniMax request failed after {self.config.max_retries} "
+                            f"attempts: {last_error}")
+
+    def list_models(self) -> list[str]:
+        """Return the model ids this key can use (best effort)."""
+        base = self.config.base_url.rstrip("/")
+        url = base.replace("/anthropic/v1", "").replace("/v1", "") + "/v1/models"
+        try:
+            with httpx.Client(timeout=self.config.timeout) as client:
+                response = client.get(url, headers=self._headers())
+            if response.status_code >= 400:
+                return []
+            payload = response.json()
+            entries = payload.get("data", [])
+            return [e.get("id", "") for e in entries if isinstance(e, dict)]
+        except httpx.HTTPError:
+            return []
+
+    def check(self) -> tuple[bool, str]:
+        """Verify the key works. Returns ``(ok, message)``."""
+        try:
+            text = self.chat(
+                user="Reply with the single word: ready",
+                system="You reply with one word only.",
+                max_tokens=16,
+            )
+        except MiniMaxError as exc:
+            return False, str(exc)
+        return True, f"Connected to {self.config.model}: {text[:80]}"
+
+
+class EchoBackend:
+    """A stub backend used by the tests and by ``--dry-run``.
+
+    It returns a marker instead of calling the API, so the pipeline can be
+    exercised end to end without a key or a network.
+    """
+
+    def __init__(self, config: Config | None = None) -> None:
+        self.config = config or Config()
+
+    def chat(
+        self,
+        user: str,
+        system: str = "",
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
+        return f"[dry-run] {user.strip()[:200]}"
+
+    def list_models(self) -> list[str]:
+        return ["dry-run"]
+
+    def check(self) -> tuple[bool, str]:
+        return True, "Dry-run backend: no API calls will be made."
+
+
+def build_client(config: Config | None = None, dry_run: bool = False):
+    """Return a client for the configured backend."""
+    config = config or Config()
+    if dry_run:
+        return EchoBackend(config)
+    return MiniMaxClient(config)

@@ -40,8 +40,8 @@ except Exception as e:
     st.stop()
 
 # --- Model Selection ---
-# Use the specified Gemini 2.5 Pro model
-MODEL_NAME = "gemini-2.5-pro-preview-03-25"
+# Use the specified Gemini 2.5 Pro Experimental model
+MODEL_NAME = "models/gemini-2.5-pro-exp-03-25"
 try:
     model = genai.GenerativeModel(MODEL_NAME)
 except Exception as e:
@@ -455,26 +455,29 @@ You are a distinguished professor and scientific writer with decades of experien
 - Do not alter any special formatting elements marked by placeholders.
 
 **Word Count Target:**
-- The humanized text content should contain approximately {actual_word_count} words
-- Do NOT count FORMAT_PLACEHOLDER texts in your word count
+- The humanized text content (excluding placeholders) should contain approximately {actual_word_count} words.
+- Do NOT count FORMAT_PLACEHOLDER texts in your word count.
 
-**Professional Academic Humanization Techniques:**
-- Replace AI-typical phrases with more natural academic expressions
-- Vary sentence structure within each paragraph
-- Use discipline-appropriate terminology consistently
-- Add subtle scholarly hedging where appropriate (e.g., "suggests that," "appears to indicate")
-- Include occasional scholarly self-references when relevant (e.g., "we propose," "our approach")
-- Use natural transitions between ideas
-
-**Input Text (with placeholders - DO NOT modify placeholders):**
+**Professional Academic Humanization Techniques for Undetectability:**
+- Replace AI-typical phrases with more natural, nuanced academic expressions.
+- **Vary sentence structure and length unpredictably** within each paragraph, mixing complex, multi-clause sentences with occasional shorter, more direct statements.
+- Use discipline-appropriate terminology consistently and accurately.
+- Add subtle scholarly hedging where appropriate (e.g., "suggests that," "appears to indicate," "it is plausible that").
+- Include occasional scholarly self-references when relevant and natural (e.g., "we propose," "our analysis suggests," "as we argue").
+- Use natural, sophisticated transitions between ideas and paragraphs.
+- **Employ uncommon or idiosyncratic transitional phrases and word choices** that deviate from typical AI patterns, lending a unique authorial voice.
+- **Introduce subtle stylistic variations and minor imperfections** characteristic of human writing, without compromising clarity or academic rigor. The goal is natural, not artificially flawed, text.
+- Ensure the prose flows naturally but **avoids overly uniform or predictable phrasing** common in AI-generated text.
+- If appropriate for the context, subtly weave in a **slightly more engaged academic voice** (e.g., 'we contend,' 'our findings compel the view that') rather than a purely impersonal, detached one.
+- Focus on conveying complex ideas with both precision and a touch of human intellectual style.
 ---
+Input Text (with placeholders - DO NOT modify placeholders):
 {text_with_placeholders}
 ---
-
-**Output Requirements:**
-- Provide ONLY the rewritten text
-- Do not include any explanations or comments in your response
-- Do not modify or remove placeholders marked as [FORMAT_PLACEHOLDER_X]
+Output Requirements:
+- Provide ONLY the rewritten text.
+- Do not include any explanations or comments in your response.
+- Do not modify or remove placeholders marked as [FORMAT_PLACEHOLDER_X].
 """
 
     try:
@@ -495,11 +498,19 @@ You are a distinguished professor and scientific writer with decades of experien
         )
         
         if response.parts:
-            output_text = response.text
-            
-            # Restore all special formatting elements
+            output_text = response.text # Model output, may contain placeholders
+
+            # 1. Restore all special formatting elements by replacing placeholders with their original content
             for i, (format_type, original_format) in enumerate(special_formats):
-                output_text = output_text.replace(f"[FORMAT_PLACEHOLDER_{i}]", original_format)
+                placeholder_tag = f"[FORMAT_PLACEHOLDER_{i}]"
+                output_text = output_text.replace(placeholder_tag, original_format)
+            
+            # 2. Clean up any remaining (unmatched or erroneously generated) [FORMAT_PLACEHOLDER_X] tags
+            # Corrected regex: r'\\[FORMAT_PLACEHOLDER_\\d+\\]' matches literal brackets and digits.
+            output_text = re.sub(r'\\[FORMAT_PLACEHOLDER_\\d+\\]', ' ', output_text) 
+            
+            # 3. Normalize spaces that might have been left after substitution or removal
+            output_text = ' '.join(output_text.split())
             
             # Verify structure preservation by checking line counts
             if len(output_text.split('\n')) < len(text.split('\n')) * 0.8:
@@ -528,8 +539,8 @@ You are a distinguished professor and scientific writer with decades of experien
             
             for part in parts:
                 if not part.startswith('[FORMAT_PLACEHOLDER_'):
-                    # Apply very minimal post-processing
-                    part = synonym_swap(part)
+                    # Apply full humanization post-processing
+                    part = postprocess_humanization(part)
                 processed_parts.append(part)
             
             final_text = ''.join(processed_parts)
@@ -637,6 +648,9 @@ You are a distinguished professor and scientific writer with decades of experien
         # Handle potential blocking or lack of response text
         if response.parts:
              output_text = response.text
+             # Remove [FORMAT_PLACEHOLDER_X] tags and clean up whitespace
+             output_text = re.sub(r'\[FORMAT_PLACEHOLDER_\d+\]', ' ', output_text)
+             output_text = ' '.join(output_text.split()) # Normalize spaces
              # Verify word count and attempt correction if needed
              actual_word_count = count_words(output_text)
              if actual_word_count != target_word_count:
@@ -694,14 +708,17 @@ if st.button("🚀 Humanize Text"):
                 end_time = time.time()
                 processing_time = end_time - start_time
                 st.info(f"Processing completed in {processing_time:.2f} seconds.")
-                
-                output_text_area.text_area("Output:", value=humanized_output, height=350, key="output_filled")
-                output_word_count.markdown(f"**Word count: {count_words(humanized_output)}**")
-                
-                if "Error:" not in humanized_output:
-                    st.success("✅ Text humanization complete!")
-                else:
-                    st.error("Processing encountered an issue. See message above.")
+            
+            # Display output and success/error message AFTER the spinner context
+            output_text_area.text_area("Output:", value=humanized_output, height=350, key="output_filled")
+            
+            # Check if the output indicates an error (as returned by the processing functions)
+            if isinstance(humanized_output, str) and not \
+               (humanized_output.startswith("Error:") or \
+                humanized_output.startswith("An error occurred") or \
+                "Content blocked due to" in humanized_output):
+                st.success("✅ Text humanization complete!")
+            # Errors are either in humanized_output or handled by st.error in processing functions.
         else:
             st.warning("Input text is empty or contains only whitespace.")
     else:

@@ -241,6 +241,10 @@ def render(d: dict) -> str:
         any slash that is escaped or that sits inside a character class.
         A naive rfind() would stop early on a character-class pattern,
         whose body is bounded by brackets rather than by a slash.
+
+        Returns the PLAIN body: the caller applies repr() when it writes
+        the literal out. Returning repr() here would double-quote every
+        pattern.
         """
         body = re.sub(r"/([gimsuy]+)$", "", rx)
         assert body.startswith("/")
@@ -262,7 +266,7 @@ def render(d: dict) -> str:
                 break
             out.append(ch)
             i += 1
-        return repr(translate_js_regex("".join(out)))
+        return translate_js_regex("".join(out))
 
     lines = [
         '"""AI-writing signature catalogue.',
@@ -280,21 +284,27 @@ def render(d: dict) -> str:
         "",
     ]
 
-    lines.append("TIER_1: Final[tuple[str, ...]] = (")
-    for w in d["tier1"]:
-        lines.append(f"    {w!r},")
-    lines.append(")")
-    lines.append("")
-    lines.append("TIER_2: Final[tuple[str, ...]] = (")
-    for w in d["tier2"]:
-        lines.append(f"    {w!r},")
-    lines.append(")")
-    lines.append("")
-    lines.append("TIER_3: Final[tuple[str, ...]] = (")
-    for w in d["tier3"]:
-        lines.append(f"    {w!r},")
-    lines.append(")")
-    lines.append("")
+    # The upstream source repeats a handful of words across tiers. Keep
+    # each word in its highest tier only, so a term is never counted
+    # twice in the score.
+    seen: set[str] = set()
+    tiers: dict[str, list[str]] = {}
+    for tier_no, key in ((1, "tier1"), (2, "tier2"), (3, "tier3")):
+        kept = []
+        for w in d[key]:
+            norm = w.lower()
+            if norm in seen:
+                continue
+            seen.add(norm)
+            kept.append(w)
+        tiers[str(tier_no)] = kept
+
+    for tier_no in ("1", "2", "3"):
+        lines.append(f"TIER_{tier_no}: Final[tuple[str, ...]] = (")
+        for w in tiers[tier_no]:
+            lines.append(f"    {w!r},")
+        lines.append(")")
+        lines.append("")
 
     lines.append("# (regex, tier, fix hint)")
     lines.append("AI_PHRASES: Final[tuple[tuple[str, int, str], ...]] = (")
