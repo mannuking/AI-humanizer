@@ -258,6 +258,17 @@ with the measured numbers.
 
 ---
 
+## Credits
+
+The detection catalogue, the writing-profile design and the scoring approach
+come from public research and open-source implementations — see
+[`docs/RESEARCH_NOTES.md`](docs/RESEARCH_NOTES.md) for the sources and the
+measurements behind each decision.
+
+Created with ❤️ by JAI.
+
+---
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
