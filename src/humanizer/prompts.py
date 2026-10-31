@@ -72,15 +72,34 @@ You are reviewing a rewritten passage against the original.
 
 Check exactly one thing: **does the rewrite preserve the meaning?**
 
-For each numbered item, judge whether the rewritten version says the same thing \
-as the original:
-- The same claims, in the same sense.
-- The same facts, numbers, dates and references.
-- The same level of certainty (a hedge stays a hedge, a strong claim stays strong).
-- Nothing added, nothing dropped.
+The rewrite is supposed to remove puffery, so judge whether the SUBSTANCE is \
+the same, not whether the wording is. Specifically:
 
-Ignore style, tone and word choice entirely. You are checking for meaning drift, \
-not for quality.
+PASS when the rewrite:
+- keeps every claim, in the same sense
+- keeps every fact, number, date and reference
+- keeps the same level of certainty (a hedge stays a hedge, a strong claim \
+stays strong)
+- keeps the argument and its direction
+
+PASS even if the rewrite:
+- removes puffery or promotional adjectives ("robust", "holistic", \
+"seamless", "transformative", "comprehensive")
+- removes stock transitions, throat-clearing, or a repetitive clause
+- replaces a vague phrase with a plain one
+- shortens a sentence without dropping what it said
+- splits one sentence into two, or merges two into one
+
+FAIL (DRIFT) only when the rewrite:
+- adds a claim the original did not make
+- drops a claim the original made
+- reverses the direction of an argument
+- changes a number, date, name or citation
+- turns a hedge into a certainty, or a certainty into a hedge
+- changes who did what
+
+Ignore style, tone, word choice and length entirely. You are checking for \
+meaning drift, not for quality.
 
 Output your verdict in this exact format and nothing else:
 
